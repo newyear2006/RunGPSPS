@@ -41,8 +41,78 @@ function ConvertFrom-SetCookieHeader {
   return $CookieHeader;
 } # ConvertFrom-SetCookieHeader
 
+# parst einen übergebenen HTML-String und liest relevante Trainingsdaten aus und gibt diese als Objekt zurück
+Function NewRoute {
+    Param (
+        $htmlRoute
+    )
+    $r=[PSCustomObject]@{Datum=(Get-Date $htmlRoute.children[0].innerhtml);
+                      Sportart=($htmlRoute.children[1].innerText.Trim());
+                      ID=$htmlRoute.children[2].childNodes[0].pathname.substring($htmlRoute.children[2].childNodes[0].pathname.LastIndexOf("_")+1);
+                      Titel=$htmlRoute.children[2].innerText;
+                      Distanz=[decimal]$htmlRoute.children[3].innerText;
+                      Läufe=[int]$htmlRoute.children[4].innerText;
+                      Ort=$htmlRoute.children[5].innerText;
+                      Land=$htmlRoute.children[6].innerText;
+                      Aufstieg=[int]$htmlRoute.children[7].innerText;
+                      Abstieg=[int]$htmlRoute.children[8].innerText;
+                      }
+    $r
+}
 
+# $runGPS muss existieren!
+Function SaveRoutesData {
+    [Cmdletbinding()]
+    Param(
+        [String]$ID,
+        [String]$Path
+    )
 
+    Write-Verbose "Saving $ID"
+    SaveRouteGPSData -ID $ID -FileType GPX -Path $Path
+    SaveRouteGPSData -ID $ID -FileType KML -Path $Path
+
+}
+
+# $runGPS muss existieren!
+Function SaveRouteGPSData {
+    Param(
+        [String]$ID,
+        [String]$FileType = "GPX",
+        [String]$Path
+    )
+    
+    $SaveFile = Join-Path -Path $Path -ChildPath "Route-$($ID).$FileType"
+
+    Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/routePlanner/dlServices/$($FileType.ToLower()).jsp?routeID=$ID" -OutFile $SaveFile
+
+}
+
+# parst einen übergebenen HTML-String und liest relevante Trainingsdaten aus und gibt diese als Objekt zurück
+function NewTraining {
+    Param (
+        $htmlTraining
+    )
+    $t=[PSCustomObject]@{Datum=(Get-Date $htmlTraining.children[0].innerhtml);
+                      Sportart=($htmlTraining.children[1].innerText.Trim());
+                      ID=$htmlTraining.children[2].childNodes[0].pathname.substring($htmlTraining.children[2].childNodes[0].pathname.LastIndexOf("_")+1);
+                      Titel=$htmlTraining.children[2].innerText;
+                      Distanz=$htmlTraining.children[3].innerText;
+                      Dauer=[TimeSpan]$htmlTraining.children[4].innerText;
+                      Kalorien=[int]$htmlTraining.children[5].innerText;
+                      HerzfrequenzD=[decimal]$htmlTraining.children[6].innerText;
+                      TrittfrequenzD=[decimal]$htmlTraining.children[7].innerText;
+                      GeschwindigkeitD=[decimal]$htmlTraining.children[8].innerText;
+                      GeschwindigkeitDA=[decimal]$htmlTraining.children[9].innerText
+                      HöheMin=[int]$htmlTraining.children[10].innerText
+                      HöheMax=[int]$htmlTraining.children[11].innerText
+                      Abstieg=[int]$htmlTraining.children[12].innerText
+                      Aufstieg=[int]$htmlTraining.children[13].innerText
+                      Gewicht=[int]$htmlTraining.children[14].innerText
+                      }
+    
+    $t
+}
 
 # $runGPS muss existieren!
 Function SaveTrainingsData {
