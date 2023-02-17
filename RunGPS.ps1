@@ -225,3 +225,6 @@ SaveTrainingGPSData -ID $trainings[0].ID -FileType GPX -Path C:\Temp\RunGPS
 
 # alle Trainings von der Abfrage speichern
 $trainings | % {SaveTrainingsData -ID $_.ID -Path C:\Temp\RunGPS }
+
+# Auswertung alle Wanderungen nach Monaten kummuliert ausgeben
+$trainings | where Sportart -eq 'Wandern'| select *, @{N='JahrMonat';E={$_.Datum.tostring("yyyy-MM")}}|group -Property JahrMonat|select count, @{N='JahrMonat';E={$_.Name}}, @{N='Km';E={$_.Group|% {$km=0} {$km+=$_.Distanz} {$km}}}
