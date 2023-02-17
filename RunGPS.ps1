@@ -194,6 +194,7 @@ $r=Invoke-WebRequest -Uri ('https://www.rungps.net/' + $l.Forms[0].Action) -Meth
 # Der Domainwechsel findet zwischen rungps.net und gps-sport.net statt!
 $wp=Invoke-WebRequest -WebSession $runGPS -Uri $r.ParsedHtml.images[0].href 
 # wenn alles geklappt hat meldet $wp.Content: 0A 0A 0A 3C 21 2D 2D 4F 4B 2D 2D 3E 0A 0A 0A     ...<!--OK-->...
+$wp.Content -eq "`n`n`n<!--OK-->`n`n`n"
 
 # Datumsangaben im ISO-Format YYYY-MM-DDD, gibt maximal 1000 Einträge zurück, evtl. muss der Datumsbereich durch zwei
 # oder mehrere Aufrufe gesplittet werden!
