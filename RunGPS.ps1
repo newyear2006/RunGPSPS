@@ -228,3 +228,9 @@ $trainings | % {SaveTrainingsData -ID $_.ID -Path C:\Temp\RunGPS }
 
 # Auswertung alle Wanderungen nach Monaten kummuliert ausgeben
 $trainings | where Sportart -eq 'Wandern'| select *, @{N='JahrMonat';E={$_.Datum.tostring("yyyy-MM")}}|group -Property JahrMonat|select count, @{N='JahrMonat';E={$_.Name}}, @{N='Km';E={$_.Group|% {$km=0} {$km+=$_.Distanz} {$km}}}
+
+# Trainings speichern
+$trainings|Export-Clixml -Path c:\temp\RunGPS\Trainings.xml
+
+# Trainings wieder laden
+$trainings=Import-Clixml -Path .\Trainings.xml
