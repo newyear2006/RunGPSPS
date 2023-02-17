@@ -48,7 +48,7 @@ Function NewRoute {
     )
     $r=[PSCustomObject]@{Datum=(Get-Date $htmlRoute.children[0].innerhtml);
                       Sportart=($htmlRoute.children[1].innerText.Trim());
-                      ID=$htmlRoute.children[2].childNodes[0].pathname.substring($htmlRoute.children[2].childNodes[0].pathname.LastIndexOf("_")+1);
+                      ID=[int]$htmlRoute.children[2].childNodes[0].pathname.substring($htmlRoute.children[2].childNodes[0].pathname.LastIndexOf("_")+1);
                       Titel=$htmlRoute.children[2].innerText;
                       Distanz=[decimal]$htmlRoute.children[3].innerText;
                       Läufe=[int]$htmlRoute.children[4].innerText;
@@ -95,7 +95,7 @@ function NewTraining {
     )
     $t=[PSCustomObject]@{Datum=(Get-Date $htmlTraining.children[0].innerhtml);
                       Sportart=($htmlTraining.children[1].innerText.Trim());
-                      ID=$htmlTraining.children[2].childNodes[0].pathname.substring($htmlTraining.children[2].childNodes[0].pathname.LastIndexOf("_")+1);
+                      ID=[int]$htmlTraining.children[2].childNodes[0].pathname.substring($htmlTraining.children[2].childNodes[0].pathname.LastIndexOf("_")+1);
                       Titel=$htmlTraining.children[2].innerText;
                       Distanz=$htmlTraining.children[3].innerText;
                       Dauer=[TimeSpan]$htmlTraining.children[4].innerText;
