@@ -143,6 +143,38 @@ Function SaveTrainingGPSData {
 
 }
 
+# ermittelt alle Trainings, Zeitraum und Sportart können optional angegeben werden
+# $runGPS muss existieren!
+# $user muss existieren!
+Function Get-Trainings {
+    [CmdletBinding()]
+    Param(
+        [DateTime]$FromDate=(Get-Date 1.1.2000),
+        [DateTime]$ToDate=(Get-Date),
+	[String]$Sport=""	# alle
+    )
+
+    $Trainings=@()
+    $loop = $true
+    while ($loop) {
+      Write-Verbose "Lade $($FromDate.toString('d')) bis $($ToDate.toString('d'))"
+      $r=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=$($FromDate.toString('yyyy-MM-dd'))&endDate=$($ToDate.toString('yyyy-MM-dd'))&sport=$($Sport)&submitButton=Aktualisieren#" -ContentType "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+      If ($?) {
+	  $htmlTrainings=$r.ParsedHtml.body.childNodes[2].childNodes[0].childNodes[1].childNodes
+	Write-Verbose "Konvertiere $($htmlTrainings.Length) Einträge"
+	  $newtrainings=$htmlTrainings | % {$t=@()} {$t+=NewTraining $_} {$t}
+	If ($htmlTrainings.Length -lt 1000) {
+          $loop = $false
+        } else {
+          $FromDate = $newTrainings[0].Datum
+        }
+        $Trainings += $newTrainings
+      }
+    }
+  $Trainings | sort Datum
+}
+
+
 # zum Prüfen, was auf der anderen Seite ankommt: https://pipedream.com/requestbin 
 # früher: http://requestb.in/
 
@@ -186,23 +218,10 @@ $routes | % {SaveRoutesData -ID $_.ID -Path C:\Temp\RunGPS }
 
 ### TRAININGS
 # Trainings
-$htmlTrainings=$r3.ParsedHtml.body.childNodes[2].childNodes[0].childNodes[1].childNodes
-# Anzahl
-$htmlTrainings.length
-$trainings=$htmlTrainings | % {$t=@()} {$t+=NewTraining $_} {$t}
+$trainings=Get-Trainings
 
-# ein Training zum Testen speichern
+# ein Training zum Testen als GPX-Datei speichern 
 SaveTrainingGPSData -ID $trainings[0].ID -FileType GPX -Path C:\Temp\RunGPS
 
-# alle Trainings von der ersten Abfrage speichern
+# alle Trainings von der Abfrage speichern
 $trainings | % {SaveTrainingsData -ID $_.ID -Path C:\Temp\RunGPS }
-
-# Trainings
-$htmlTrainings=$r4.ParsedHtml.body.childNodes[2].childNodes[0].childNodes[1].childNodes
-# Anzahl
-$htmlTrainings.length
-$trainings=$htmlTrainings | % {$t=@()} {$t+=NewTraining $_} {$t}
-
-# alle Trainings von der zweiten Abfrage speichern
-$trainings | % {SaveTrainingsData -ID $_.ID -Path C:\Temp\RunGPS }
-
