@@ -213,7 +213,7 @@ $user='Benutzer'
 $password='Passwort'
 #######
 $cred=Get-Credential -Message 'Bitte Zugangsdaten für RunGPS-Anmeldung eingeben'
-$runGPS = Connect-RunGPS -Credentials $cred
+$runGPS = Connect-RunGPS -Credential $cred
 
 # Datumsangaben im ISO-Format YYYY-MM-DDD, gibt maximal 1000 Einträge zurück, evtl. muss der Datumsbereich durch zwei
 # oder mehrere Aufrufe gesplittet werden!
