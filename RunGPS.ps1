@@ -202,7 +202,7 @@ Function Connect-RunGPS {
   # wenn alles geklappt hat meldet $wp.Content: 0A 0A 0A 3C 21 2D 2D 4F 4B 2D 2D 3E 0A 0A 0A     ...<!--OK-->...
   $wp.Content -eq "`n`n`n<!--OK-->`n`n`n"
   
-  $runGPS
+  [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS
 }
 
 # zum Prüfen, was auf der anderen Seite ankommt: https://pipedream.com/requestbin 
