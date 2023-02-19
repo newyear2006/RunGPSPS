@@ -187,7 +187,7 @@ Function Connect-RunGPS {
   
   $uri = "https://www.rungps.net/login.jsp"
 
-  [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS = $null
+  # [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS = $null
   $l=Invoke-WebRequest -Uri $uri -SessionVariable runGPS
   $l.Forms[0].Fields["userName"]=$Credential.Username
   $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
@@ -201,7 +201,7 @@ Function Connect-RunGPS {
   # Der Domainwechsel findet zwischen rungps.net und gps-sport.net statt!
   $wp=Invoke-WebRequest -WebSession $runGPS -Uri $r.ParsedHtml.images[0].href 
   # wenn alles geklappt hat meldet $wp.Content: 0A 0A 0A 3C 21 2D 2D 4F 4B 2D 2D 3E 0A 0A 0A     ...<!--OK-->...
-  $wp.Content -eq "`n`n`n<!--OK-->`n`n`n"
+  # $wp.Content -eq "`n`n`n<!--OK-->`n`n`n"
   
   [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS
 }
