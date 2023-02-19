@@ -187,6 +187,7 @@ Function Connect-RunGPS {
   
   $uri = "https://www.rungps.net/login.jsp"
 
+  [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS = $null
   $l=Invoke-WebRequest -Uri $uri -SessionVariable runGPS
   $l.Forms[0].Fields["userName"]=$Credential.Username
   $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
