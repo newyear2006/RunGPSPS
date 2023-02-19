@@ -76,6 +76,7 @@ Function SaveRoutesData {
 
 # $runGPS muss existieren!
 Function SaveRouteGPSData {
+    [CmdletBinding()]
     Param(
         [String]$ID,
         [String]$FileType = "GPX",
@@ -119,28 +120,32 @@ Function SaveTrainingsData {
     [Cmdletbinding()]
     Param(
         [String]$ID,
-        [String]$Path
+        [String]$Path,
+	[switch]$Force
     )
 
     Write-Verbose "Saving $ID"
-    SaveTrainingGPSData -ID $ID -FileType GPX -Path $Path
-    SaveTrainingGPSData -ID $ID -FileType KML -Path $Path
-    SaveTrainingGPSData -ID $ID -FileType TCX -Path $Path
+    SaveTrainingGPSData -ID $ID -FileType GPX -Path $Path -Force:$Force
+    SaveTrainingGPSData -ID $ID -FileType KML -Path $Path -Force:$Force
+    SaveTrainingGPSData -ID $ID -FileType TCX -Path $Path -Force:$Force
 
 }
 
 # $runGPS muss existieren!
 Function SaveTrainingGPSData {
+    [CmdletBinding()]
     Param(
         [String]$ID,
         [String]$FileType = "GPX",
-        [String]$Path
+        [String]$Path,
+	[switch]$Force
     )
 
     $SaveFile = Join-Path -Path $Path -ChildPath "$($ID).$FileType"
 
-    Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/services/training$($FileType).jsp?trainingID=$ID" -OutFile $SaveFile
-
+    If (($Force) -or (-Not (Test-Path $SaveFile -Type Leaf))) {
+      Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/services/training$($FileType).jsp?trainingID=$ID" -OutFile $SaveFile
+    }
 }
 
 # ermittelt alle Trainings, Zeitraum und Sportart können optional angegeben werden
