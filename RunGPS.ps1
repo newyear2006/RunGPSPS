@@ -179,6 +179,31 @@ Function Get-Trainings {
   $Trainings | sort Datum
 }
 
+Function Connect-RunGPS {
+  [CmdletBinding()]
+  Param (
+  	[PSCredential]$Credential
+  )
+  
+  $uri = "https://www.rungps.net/login.jsp"
+
+  $l=Invoke-WebRequest -Uri $uri -SessionVariable runGPS
+  $l.Forms[0].Fields["userName"]=$Credential.Username
+  $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
+  $UnsecurePassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)  
+  $l.Forms[0].Fields["password1"]=$UnsecurePassword
+  $l.Forms[0].Fields
+  $r=Invoke-WebRequest -Uri ('https://www.rungps.net/' + $l.Forms[0].Action) -Method Post -Body $l -WebSession $runGPS
+  #$runGPS.Cookies.GetCookies($uri)
+  # Dieses Image muss aufgerufen werden, damit die passenden Cookies für den Domainwechsel vorhanden sind!
+  # Der Domainwechsel findet zwischen rungps.net und gps-sport.net statt!
+  $wp=Invoke-WebRequest -WebSession $runGPS -Uri $r.ParsedHtml.images[0].href 
+  # wenn alles geklappt hat meldet $wp.Content: 0A 0A 0A 3C 21 2D 2D 4F 4B 2D 2D 3E 0A 0A 0A     ...<!--OK-->...
+  $wp.Content -eq "`n`n`n<!--OK-->`n`n`n"
+  
+  $runGPS
+}
 
 # zum Prüfen, was auf der anderen Seite ankommt: https://pipedream.com/requestbin 
 # früher: http://requestb.in/
@@ -187,19 +212,8 @@ Function Get-Trainings {
 $user='Benutzer'
 $password='Passwort'
 #######
-$uri = "https://www.rungps.net/login.jsp"
-
-$l=Invoke-WebRequest -Uri $uri -SessionVariable runGPS
-$l.Forms[0].Fields["userName"]=$user
-$l.Forms[0].Fields["password1"]=$password
-$l.Forms[0].Fields
-$r=Invoke-WebRequest -Uri ('https://www.rungps.net/' + $l.Forms[0].Action) -Method Post -Body $l -WebSession $runGPS
-#$runGPS.Cookies.GetCookies($uri)
-# Dieses Image muss aufgerufen werden, damit die passenden Cookies für den Domainwechsel vorhanden sind!
-# Der Domainwechsel findet zwischen rungps.net und gps-sport.net statt!
-$wp=Invoke-WebRequest -WebSession $runGPS -Uri $r.ParsedHtml.images[0].href 
-# wenn alles geklappt hat meldet $wp.Content: 0A 0A 0A 3C 21 2D 2D 4F 4B 2D 2D 3E 0A 0A 0A     ...<!--OK-->...
-$wp.Content -eq "`n`n`n<!--OK-->`n`n`n"
+$cred=Get-Credential -Message 'Bitte Zugangsdaten für RunGPS-Anmeldung eingeben'
+$runGPS = Connect-RunGPS -Credentials $cred
 
 # Datumsangaben im ISO-Format YYYY-MM-DDD, gibt maximal 1000 Einträge zurück, evtl. muss der Datumsbereich durch zwei
 # oder mehrere Aufrufe gesplittet werden!
