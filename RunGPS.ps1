@@ -206,6 +206,16 @@ Function Connect-RunGPS {
   }
 }
 
+Function Disconnect-RunGPS {
+  [CmdletBinding()]
+  Param(
+    [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS
+  )
+
+  $r=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/logout.jsp" -ContentType "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+
+}
+
 # zum Prüfen, was auf der anderen Seite ankommt: https://pipedream.com/requestbin 
 # früher: http://requestb.in/
 
