@@ -98,9 +98,9 @@ Function Get-DistanzBereich {
     {$km -ge 42.195} {'42195';break;}
     {$km -ge 21.098} {'21098';break;}
     {$km -ge 10.0} {'10000';break;}
-    {$km -ge 5.0} {'5000';break;}
-    {$km -ge 1.0} {'1000';break;}
-    default {'0'}
+    {$km -ge 5.0} {' 5000';break;}
+    {$km -ge 1.0} {' 1000';break;}
+    default {'    0'}
   }
 }  
 
