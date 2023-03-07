@@ -119,13 +119,13 @@ function NewTraining {
                       HerzfrequenzD=[decimal]$htmlTraining.children[6].innerText;
                       TrittfrequenzD=[decimal]$htmlTraining.children[7].innerText;
                       GeschwindigkeitD=[decimal]$htmlTraining.children[8].innerText;
-                      GeschwindigkeitDA=[decimal]$htmlTraining.children[9].innerText
-                      HöheMin=[int]$htmlTraining.children[10].innerText
-                      HöheMax=[int]$htmlTraining.children[11].innerText
-                      Abstieg=[int]$htmlTraining.children[12].innerText
-                      Aufstieg=[int]$htmlTraining.children[13].innerText
-                      Gewicht=[int]$htmlTraining.children[14].innerText
-		      DistanzBereich=Get-DistanzBereich -km $_.Distanz
+                      GeschwindigkeitDA=[decimal]$htmlTraining.children[9].innerText;
+                      HöheMin=[int]$htmlTraining.children[10].innerText;
+                      HöheMax=[int]$htmlTraining.children[11].innerText;
+                      Abstieg=[int]$htmlTraining.children[12].innerText;
+                      Aufstieg=[int]$htmlTraining.children[13].innerText;
+                      Gewicht=[int]$htmlTraining.children[14].innerText;
+		      DistanzBereich=Get-DistanzBereich -km $htmlTraining.children[3].innerText;
                       }
     
     $t
