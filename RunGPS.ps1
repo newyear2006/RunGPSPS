@@ -279,9 +279,11 @@ $trainings | where Sportart -eq 'Wandern'| select *, @{N='JahrMonat';E={$_.Datum
 # Auswertung alle Wanderungen nach Jahren kumuliert ausgeben
 $trainings | where Sportart -eq 'Wandern'| select *, @{N='Jahr';E={$_.Datum.Year}}|group -Property Jahr|select count, @{N='Jahr';E={$_.Name}}, @{N='Km';E={$_.Group|% {$km=0} {$km+=$_.Distanz} {$km}}}
 
+# Auswertung nach Distanzbereichen
+$trainings | where Sportart -eq 'Wandern'| group -Property Distanzbereich|select count, Name, @{N='Km';E={$_.Group|% {$km=0} {$km+=$_.Distanz} {$km}}}
+
 # Ausgabe der gesamten Trainingszeit
 New-Timespan -seconds ($trainings|select -ExpandProperty dauer| measure -Sum -Property totalseconds).sum
-
 
 # Trainings speichern
 $trainings|Export-Clixml -Path c:\temp\RunGPS\Trainings.xml
