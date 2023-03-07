@@ -89,6 +89,21 @@ Function SaveRouteGPSData {
 
 }
 
+# gibt zu einer KM-Zahl den Distanzbereich zurück
+Function Get-DistanzBereich {
+  [CmdletBinding()]
+  Param ([decimal]$km)
+
+  switch ($km) {
+    {$km -ge 42.195} {'42195';break;}
+    {$km -ge 21.098} {'21098';break;}
+    {$km -ge 10.0} {'10000';break;}
+    {$km -ge 5.0} {'5000';break;}
+    {$km -ge 1.0} {'1000';break;}
+    default {'0'}
+  }
+}  
+
 # parst einen übergebenen HTML-String und liest relevante Trainingsdaten aus und gibt diese als Objekt zurück
 function NewTraining {
     Param (
@@ -110,6 +125,7 @@ function NewTraining {
                       Abstieg=[int]$htmlTraining.children[12].innerText
                       Aufstieg=[int]$htmlTraining.children[13].innerText
                       Gewicht=[int]$htmlTraining.children[14].innerText
+		      DistanzBereich=Get-DistanzBereich -km $_.Distanz
                       }
     
     $t
