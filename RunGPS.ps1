@@ -199,9 +199,10 @@ Function Get-Trainings {
 # $runGPS muss existieren!
 Function Get-MonthToGo {
     [CmdletBinding()]
-    Param()
+    Param(
+	    [DateTime]$Datum=(Get-Date)
+    )
 
-    $Datum = Get-Date
     # Monatsanafang ermitteln
     $Anfang = Get-date -Day 1 -Month $Datum.Month -Year $Datum.Year -Hour 0 -Minute 0 -Second 0
     $Ende = $Anfang.AddMonths(1).AddSeconds(-1)
