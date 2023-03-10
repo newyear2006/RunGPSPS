@@ -195,6 +195,35 @@ Function Get-Trainings {
   $Trainings | sort Datum
 }
 
+# ermittelt die im aktuellen Monat noch zu leistenden Werte, im Vergleich zum Vorjahresmonat
+# $runGPS muss existieren!
+Function Get-MonthToGo {
+    [CmdletBinding()]
+    Param()
+
+    $Datum = Get-Date
+    # Monatsanafang ermitteln
+    $Anfang = Get-date -Day 1 -Month $Datum.Month -Year $Datum.Year -Hour 0 -Minute 0 -Second 0
+    $Ende = $Anfang.AddMonths(1).AddSeconds(-1)
+    
+    Write-Verbose "Ermittle Daten im Zeitraum $Anfang bis $Ende"
+    $t1=Get-Trainings -Sport Hiking -FromDate $Anfang -ToDate $Ende -Verbose
+    $Anfang = $Anfang.AddYears(-1)
+    $Ende = $Ende.AddYears(-1)
+    $t2=Get-Trainings -Sport Hiking -FromDate $Anfang -ToDate $Ende -Verbose
+    
+    # Werte ausgeben, aktueller Monat
+    $t1|select ID, datum, Distanz, Dauer, Distanzbereich|ft
+    $t1|select ID, datum, Distanz, Dauer, Distanzbereich|measure -sum -Property Distanz
+    
+    # Vergleichsmonat aus Vorjahr:
+    $t2|select ID, datum, Distanz, Dauer, Distanzbereich|ft
+    
+    Write-Host "TODO:"
+    $t2|where datum -gt (Get-date).AddYears(-1) |select ID, datum, Distanz, Dauer, Distanzbereich|ft
+    $t2|where datum -gt (Get-date).AddYears(-1) |select ID, datum, Distanz, Dauer, Distanzbereich|measure -sum -Property Distanz
+}
+
 Function Connect-RunGPS {
   [CmdletBinding()]
   Param (
