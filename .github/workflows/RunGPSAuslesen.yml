@@ -20,6 +20,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Upgrade to latest powershell on Linux
+        env:
+          RUNGPSUSER: ${{ secrets.RUNGPSUSER }}
+          RUNGPSPASSWORD: ${{ secrets.RUNGPSPASSWORD }}
         run: |
           # docs: https://learn.microsoft.com/de-de/powershell/scripting/install/install-other-linux?view=powershell-7.3#installation-using-a-binary-archive-file
           # Download the powershell '.tar.gz' archive
