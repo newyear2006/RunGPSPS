@@ -37,7 +37,7 @@ jobs:
       # Skript ausführen
       - name: RunGPS.PS1 laden und Abfragen ausführen
         run: |
-          # . ./RunGPS.PS1
-          ./RunGPS.PS1
-          # ./Tests/Abfragen.PS1
+          # . ./RunGPS.ps1
+          ./RunGPS.ps1
+          # ./Tests/Abfragen.ps1
         shell: pwsh
