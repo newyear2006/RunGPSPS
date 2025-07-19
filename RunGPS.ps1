@@ -280,7 +280,8 @@ $user=$env:RUNGPSUSER
 "user-Länge: $($user.length)"
 $password = ConvertTo-SecureString $env:RUNGPSPASSWORD -AsPlainText -Force
 $cred = New-Object -Typename System.Management.Automation.PSCredential -Argumentlist $user, $password
-
+"und?"
+$cred
 $runGPS = Connect-RunGPS -Credential $cred
 
 # Datumsangaben im ISO-Format YYYY-MM-DDD, gibt maximal 1000 Einträge zurück, evtl. muss der Datumsbereich durch zwei
