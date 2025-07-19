@@ -277,6 +277,7 @@ $password='Passwort'
 # dann mittels $env:RUNGPSUSER und $env:RUNGPSPASSWORD ansprechen
 
 $user=$env:RUNGPSUSER
+"user-Länge: $($user.length)"
 $password = ConvertTo-SecureString $env:RUNGPSPASSWORD -AsPlainText -Force
 $cred = New-Object -Typename System.Management.Automation.PSCredential -Argumentlist $user, $password
 
