@@ -71,7 +71,12 @@ function ConvertFrom-RunGpsRoutesHtml {
     param([string]$Content)
 
     $doc = $Content | ConvertFrom-Html
-    $rows = @($doc.DocumentNode.SelectNodes('//tr[td]'))
+
+    if ($null -eq $doc) {
+        throw "HTML konnte nicht geparst werden. Content ist leer oder ungültig."
+    }
+
+    $rows = @($doc.SelectNodes('//tr[td]'))
 
     foreach ($row in $rows) {
         $cells = @($row.SelectNodes('./td'))
@@ -106,7 +111,12 @@ function ConvertFrom-RunGpsTrainingsHtml {
     param([string]$Content)
 
     $doc = $Content | ConvertFrom-Html
-    $rows = @($doc.DocumentNode.SelectNodes('//tr[td]'))
+
+    if ($null -eq $doc) {
+        throw "HTML konnte nicht geparst werden. Content ist leer oder ungültig."
+    }
+
+    $rows = @($doc.SelectNodes('//tr[td]'))
 
     foreach ($row in $rows) {
         $cells = @($row.SelectNodes('./td'))
