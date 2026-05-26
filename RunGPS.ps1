@@ -1,5 +1,149 @@
 # RunGPS-Powershellroutinen
 
+Import-Module PowerHTML -ErrorAction Stop
+
+function ConvertFrom-HtmlText {
+    param([object]$Node)
+
+    if ($null -eq $Node) {
+        return ''
+    }
+
+    return ([System.Net.WebUtility]::HtmlDecode($Node.InnerText) -replace [char]160, ' ').Trim()
+}
+
+function ConvertTo-RunGpsDecimal {
+    param([string]$Text)
+
+    $clean = ([System.Net.WebUtility]::HtmlDecode($Text) -replace [char]160, ' ').Trim()
+    $clean = $clean -replace '[^\d,.\-]', ''
+
+    if ($clean -match ',' -and $clean -notmatch '\.') {
+        $clean = $clean -replace ',', '.'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($clean)) {
+        return [decimal]0
+    }
+
+    return [decimal]::Parse(
+        $clean,
+        [System.Globalization.NumberStyles]::Number,
+        [System.Globalization.CultureInfo]::InvariantCulture
+    )
+}
+
+function ConvertTo-RunGpsInt {
+    param([string]$Text)
+
+    $clean = ([System.Net.WebUtility]::HtmlDecode($Text) -replace [char]160, ' ').Trim()
+    $clean = $clean -replace '[^\d\-]', ''
+
+    if ([string]::IsNullOrWhiteSpace($clean)) {
+        return 0
+    }
+
+    return [int]$clean
+}
+
+function Get-RunGpsIdFromCell {
+    param([object]$Cell)
+
+    $link = $Cell.SelectSingleNode('.//a[@href]')
+    if ($null -eq $link) {
+        return $null
+    }
+
+    $href = $link.GetAttributeValue('href', '')
+
+    if ($href -match '_(\d+)(?:\D*$|$)') {
+        return [int]$matches[1]
+    }
+
+    if ($href -match '(?:routeID|trainingID)=(\d+)') {
+        return [int]$matches[1]
+    }
+
+    return $null
+}
+
+function ConvertFrom-RunGpsRoutesHtml {
+    param([string]$Content)
+
+    $doc = $Content | ConvertFrom-Html
+    $rows = @($doc.DocumentNode.SelectNodes('//tr[td]'))
+
+    foreach ($row in $rows) {
+        $cells = @($row.SelectNodes('./td'))
+
+        if ($cells.Count -lt 9) {
+            continue
+        }
+
+        $id = Get-RunGpsIdFromCell -Cell $cells[2]
+        if ($null -eq $id) {
+            continue
+        }
+
+        $values = @($cells | ForEach-Object { ConvertFrom-HtmlText $_ })
+
+        [PSCustomObject]@{
+            Datum    = Get-Date $values[0]
+            Sportart = $values[1]
+            ID       = $id
+            Titel    = $values[2]
+            Distanz  = ConvertTo-RunGpsDecimal $values[3]
+            Läufe    = ConvertTo-RunGpsInt $values[4]
+            Ort      = $values[5]
+            Land     = $values[6]
+            Aufstieg = ConvertTo-RunGpsInt $values[7]
+            Abstieg  = ConvertTo-RunGpsInt $values[8]
+        }
+    }
+}
+
+function ConvertFrom-RunGpsTrainingsHtml {
+    param([string]$Content)
+
+    $doc = $Content | ConvertFrom-Html
+    $rows = @($doc.DocumentNode.SelectNodes('//tr[td]'))
+
+    foreach ($row in $rows) {
+        $cells = @($row.SelectNodes('./td'))
+
+        if ($cells.Count -lt 15) {
+            continue
+        }
+
+        $id = Get-RunGpsIdFromCell -Cell $cells[2]
+        if ($null -eq $id) {
+            continue
+        }
+
+        $values = @($cells | ForEach-Object { ConvertFrom-HtmlText $_ })
+
+        [PSCustomObject]@{
+            Datum            = Get-Date $values[0]
+            Sportart         = $values[1]
+            ID               = $id
+            Titel            = $values[2]
+            Distanz          = ConvertTo-RunGpsDecimal $values[3]
+            Dauer            = [TimeSpan]$values[4]
+            Kalorien         = ConvertTo-RunGpsInt $values[5]
+            HerzfrequenzD    = ConvertTo-RunGpsDecimal $values[6]
+            TrittfrequenzD   = ConvertTo-RunGpsDecimal $values[7]
+            GeschwindigkeitD = ConvertTo-RunGpsDecimal $values[8]
+            GeschwindigkeitDA = ConvertTo-RunGpsDecimal $values[9]
+            HöheMin          = ConvertTo-RunGpsInt $values[10]
+            HöheMax          = ConvertTo-RunGpsInt $values[11]
+            Abstieg          = ConvertTo-RunGpsInt $values[12]
+            Aufstieg         = ConvertTo-RunGpsInt $values[13]
+            Gewicht          = ConvertTo-RunGpsInt $values[14]
+            DistanzBereich   = Get-DistanzBereich -km (ConvertTo-RunGpsDecimal $values[3])
+        }
+    }
+}
+
 # https://d-fens.ch/2013/04/29/invoke-webrequest-does-not-save-all-cookies-in-sessionvariable/
 function ConvertFrom-SetCookieHeader {
   [cmdletbinding()]
@@ -184,16 +328,24 @@ Function Get-Trainings {
 	  }
       $r=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=$($FromDate.toString('yyyy-MM-dd'))&endDate=$($ToDate.toString('yyyy-MM-dd'))&sport=$($Sport)&submitButton=Aktualisieren#" -Headers $headers
       If ($?) {
-	  $htmlTrainings=$r.ParsedHtml.body.childNodes[2].childNodes[0].childNodes[1].childNodes
-	Write-Verbose "Konvertiere $($htmlTrainings.Length) Einträge"
-	  $newtrainings=$htmlTrainings | % {$t=@()} {$t+=NewTraining $_} {$t}
-	If ($htmlTrainings.Length -lt 1000) {
-          $loop = $false
-        } else {
-          $FromDate = $newTrainings[0].Datum
-        }
-        $Trainings += $newTrainings
-      }
+		$newTrainings = @(ConvertFrom-RunGpsTrainingsHtml -Content $r.Content)
+		
+		Write-Verbose "Konvertiere $($newTrainings.Count) Einträge"
+		
+		if ($newTrainings.Count -eq 0) {
+		    $debugFile = Join-Path $PWD "debug-trainings-$($FromDate.ToString('yyyyMMdd'))-$($ToDate.ToString('yyyyMMdd')).html"
+		    $r.Content | Set-Content -Path $debugFile -Encoding UTF8
+		    throw "Keine Trainings gefunden. HTML wurde nach $debugFile geschrieben."
+		}
+		
+		if ($newTrainings.Count -lt 1000) {
+		    $loop = $false
+		} else {
+		    $FromDate = $newTrainings[0].Datum
+		}
+		
+		$Trainings += $newTrainings
+	  }
     }
   $Trainings | sort Datum
 }
@@ -368,10 +520,13 @@ $r4=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTra
 
 ### ROUTEN
 # Routes
-$htmlRoutes=$r2.ParsedHtml.body.childNodes[1].childNodes[0].childNodes[13].childNodes[1].childnodes
-# Anzahl
-$htmlRoutes.length
-$routes=$htmlRoutes | % {$r=@()} {$r+=NewRoute $_} {$r}
+$routes = @(ConvertFrom-RunGpsRoutesHtml -Content $r2.Content)
+Write-Host "Routes found: $($routes.Count)"
+if ($routes.Count -eq 0) {
+    $debugFile = Join-Path $PWD 'debug-routes.html'
+    $r2.Content | Set-Content -Path $debugFile -Encoding UTF8
+    throw "Keine Routen gefunden. HTML wurde nach $debugFile geschrieben."
+}
 
 # erste Route zum Testen speichern
 SaveRouteGPSData -ID $routes[0].ID -FileType GPX -Path C:\Temp\RunGPS
