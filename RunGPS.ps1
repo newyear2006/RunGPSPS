@@ -67,6 +67,28 @@ function Get-RunGpsIdFromCell {
     return $null
 }
 
+function Select-HtmlNodes {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Node,
+
+        [Parameter(Mandatory)]
+        [string]$XPath
+    )
+
+    if ($null -eq $Node) {
+        return @()
+    }
+
+    $nodes = $Node.SelectNodes($XPath)
+
+    if ($null -eq $nodes) {
+        return @()
+    }
+
+    return @($nodes | Where-Object { $null -ne $_ })
+}
+
 function ConvertFrom-RunGpsRoutesHtml {
     param([string]$Content)
 
@@ -76,10 +98,20 @@ function ConvertFrom-RunGpsRoutesHtml {
         throw "HTML konnte nicht geparst werden. Content ist leer oder ungültig."
     }
 
-    $rows = @($doc.SelectNodes('//tr[td]'))
+    $rows = Select-HtmlNodes -Node $doc -XPath '//tr[td]'
+	if ($rows.Count -eq 0) {
+	    $debugFile = Join-Path $PWD 'debug-routes.html'
+	    $Content | Set-Content -Path $debugFile -Encoding utf8
+	
+	    Write-Host "Keine <tr><td> Tabellenzeilen gefunden."
+	    Write-Host "HTML-Laenge: $($Content.Length)"
+	    Write-Host "Debug-Datei: $debugFile"
+	
+	    throw "Keine Tabellenzeilen in der Routen-HTML-Seite gefunden. Vermutlich ist die geladene Seite nicht die erwartete userRoutes.jsp-Tabelle."
+	}
 
     foreach ($row in $rows) {
-        $cells = @($row.SelectNodes('./td'))
+        $cells = Select-HtmlNodes -Node $row -XPath './td'
 
         if ($cells.Count -lt 9) {
             continue
@@ -116,16 +148,28 @@ function ConvertFrom-RunGpsTrainingsHtml {
         throw "HTML konnte nicht geparst werden. Content ist leer oder ungültig."
     }
 
-    $rows = @($doc.SelectNodes('//tr[td]'))
+    $rows = Select-HtmlNodes -Node $doc -XPath '//tr[td]'
+
+    if ($rows.Count -eq 0) {
+        $debugFile = Join-Path $PWD 'debug-trainings.html'
+        $Content | Set-Content -Path $debugFile -Encoding utf8
+
+        Write-Host "Keine <tr><td> Tabellenzeilen gefunden."
+        Write-Host "HTML-Laenge: $($Content.Length)"
+        Write-Host "Debug-Datei: $debugFile"
+
+        throw "Keine Tabellenzeilen in der Trainings-HTML-Seite gefunden. Vermutlich ist die geladene Seite nicht die erwartete userTrainings.jsp-Tabelle."
+    }
 
     foreach ($row in $rows) {
-        $cells = @($row.SelectNodes('./td'))
+        $cells = Select-HtmlNodes -Node $row -XPath './td'
 
         if ($cells.Count -lt 15) {
             continue
         }
 
         $id = Get-RunGpsIdFromCell -Cell $cells[2]
+
         if ($null -eq $id) {
             continue
         }
@@ -144,8 +188,8 @@ function ConvertFrom-RunGpsTrainingsHtml {
             TrittfrequenzD   = ConvertTo-RunGpsDecimal $values[7]
             GeschwindigkeitD = ConvertTo-RunGpsDecimal $values[8]
             GeschwindigkeitDA = ConvertTo-RunGpsDecimal $values[9]
-            HöheMin          = ConvertTo-RunGpsInt $values[10]
-            HöheMax          = ConvertTo-RunGpsInt $values[11]
+            HoeheMin         = ConvertTo-RunGpsInt $values[10]
+            HoeheMax         = ConvertTo-RunGpsInt $values[11]
             Abstieg          = ConvertTo-RunGpsInt $values[12]
             Aufstieg         = ConvertTo-RunGpsInt $values[13]
             Gewicht          = ConvertTo-RunGpsInt $values[14]
