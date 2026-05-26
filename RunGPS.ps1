@@ -179,7 +179,10 @@ Function Get-Trainings {
     $loop = $true
     while ($loop) {
       Write-Verbose "Lade $($FromDate.toString('d')) bis $($ToDate.toString('d'))"
-      $r=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=$($FromDate.toString('yyyy-MM-dd'))&endDate=$($ToDate.toString('yyyy-MM-dd'))&sport=$($Sport)&submitButton=Aktualisieren#" -ContentType "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+	  $headers = @{
+ 		   Accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+	  }
+      $r=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=$($FromDate.toString('yyyy-MM-dd'))&endDate=$($ToDate.toString('yyyy-MM-dd'))&sport=$($Sport)&submitButton=Aktualisieren#" -Headers $headers
       If ($?) {
 	  $htmlTrainings=$r.ParsedHtml.body.childNodes[2].childNodes[0].childNodes[1].childNodes
 	Write-Verbose "Konvertiere $($htmlTrainings.Length) Einträge"
@@ -351,14 +354,17 @@ $cred = New-Object -Typename System.Management.Automation.PSCredential -Argument
 "und?"
 $cred
 $runGPS = Connect-RunGPS -Credential $cred
+$headers = @{
+    Accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+}
 
 # Datumsangaben im ISO-Format YYYY-MM-DDD, gibt maximal 1000 Einträge zurück, evtl. muss der Datumsbereich durch zwei
 # oder mehrere Aufrufe gesplittet werden!
-$r2=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userRoutes.jsp?userName=$($User)&startDate=2006-10-18&endDate=2023-02-06&sport=&searchTerm=&submitButton=Aktualisieren#" -ContentType "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+$r2=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userRoutes.jsp?userName=$($User)&startDate=2006-10-18&endDate=2023-02-06&sport=&searchTerm=&submitButton=Aktualisieren#" -Headers $headers
 
-$r3=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2006-10-26&endDate=2017-12-31&sport=&submitButton=Aktualisieren#" -ContentType "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+$r3=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2006-10-26&endDate=2017-12-31&sport=&submitButton=Aktualisieren#" -Headers $headers
 
-$r4=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2018-01-01&endDate=2023-02-06&sport=&submitButton=Aktualisieren#" -ContentType "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+$r4=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2018-01-01&endDate=2023-02-06&sport=&submitButton=Aktualisieren#" -Headers $headers
 
 ### ROUTEN
 # Routes
