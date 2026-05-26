@@ -226,30 +226,98 @@ Function Get-MonthToGo {
 }
 
 Function Connect-RunGPS {
-  [CmdletBinding()]
-  Param (
-  	[PSCredential]$Credential
-  )
-  
-  $uri = "https://www.rungps.net/login.jsp"
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory)]
+        [PSCredential]$Credential
+    )
 
-  # [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS = $null
-  $l=Invoke-WebRequest -Uri $uri -SessionVariable runGPS
-  $l.Forms[0].Fields["userName"]=$Credential.Username
-  $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
-  $UnsecurePassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
-  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)  
-  $l.Forms[0].Fields["password1"]=$UnsecurePassword
-  # $l.Forms[0].Fields
-  $r=Invoke-WebRequest -Uri ('https://www.rungps.net/' + $l.Forms[0].Action) -Method Post -Body $l -WebSession $runGPS
-  #$runGPS.Cookies.GetCookies($uri)
-  # Dieses Image muss aufgerufen werden, damit die passenden Cookies für den Domainwechsel vorhanden sind!
-  # Der Domainwechsel findet zwischen rungps.net und gps-sport.net statt!
-  $wp=Invoke-WebRequest -WebSession $runGPS -Uri $r.ParsedHtml.images[0].href 
-  # wenn alles geklappt hat meldet $wp.Content: 0A 0A 0A 3C 21 2D 2D 4F 4B 2D 2D 3E 0A 0A 0A     ...<!--OK-->...
-  If ($wp.Content -eq "`n`n`n<!--OK-->`n`n`n") {
-    [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS
-  }
+    $ErrorActionPreference = 'Stop'
+
+    # Für Windows PowerShell 5.1 auf alten/strengen HTTPS-Seiten
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    $uri = 'https://www.rungps.net/login.jsp'
+
+    Write-Host "GET $uri"
+    $l = Invoke-WebRequest `
+        -Uri $uri `
+        -SessionVariable runGPS `
+        -UseBasicParsing `
+        -ErrorAction Stop
+
+    if (-not $runGPS) {
+        throw "WebSession wurde nicht erzeugt."
+    }
+
+    # Passwort aus PSCredential holen
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
+    try {
+        $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+
+    # Formular-Action aus HTML lesen, ohne IE/MSHTML
+    $formAction = $null
+    if ($l.Content -match '<form[^>]+action=["'']?([^"'' >]+)') {
+        $formAction = $matches[1]
+    }
+
+    if ([string]::IsNullOrWhiteSpace($formAction)) {
+        Write-Warning "Keine form action gefunden; verwende login.jsp als Fallback."
+        $formAction = 'login.jsp'
+    }
+
+    $loginUri = ([Uri]::new([Uri]$uri, $formAction)).AbsoluteUri
+    Write-Host "POST $loginUri"
+
+    $body = @{
+        userName  = $Credential.UserName
+        password1 = $plainPassword
+    }
+
+    $r = Invoke-WebRequest `
+        -Uri $loginUri `
+        -Method Post `
+        -Body $body `
+        -ContentType 'application/x-www-form-urlencoded' `
+        -WebSession $runGPS `
+        -UseBasicParsing `
+        -MaximumRedirection 10 `
+        -ErrorAction Stop
+
+    # Diagnose: nicht das Passwort ausgeben!
+    Write-Host "Login response: HTTP $($r.StatusCode), Content length: $($r.Content.Length)"
+
+    # Alter Code nutzte: $r.ParsedHtml.images[0].href
+    # Das geht mit -UseBasicParsing nicht mehr. Deshalb URL aus dem HTML extrahieren.
+    $bridgeUrl = $null
+
+    if ($r.Content -match '(https?://(?:www\.)?gps-sport\.net/[^"'' <]+)') {
+        $bridgeUrl = $matches[1]
+    }
+    elseif ($r.Content -match '<img[^>]+(?:src|href)=["'']([^"'']+)') {
+        $bridgeUrl = ([Uri]::new([Uri]$loginUri, $matches[1])).AbsoluteUri
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($bridgeUrl)) {
+        Write-Host "Bridge request: $bridgeUrl"
+
+        $wp = Invoke-WebRequest `
+            -WebSession $runGPS `
+            -Uri $bridgeUrl `
+            -UseBasicParsing `
+            -ErrorAction Stop
+
+        Write-Host "Bridge response: HTTP $($wp.StatusCode), Content length: $($wp.Content.Length)"
+    }
+    else {
+        Write-Warning "Keine Bridge-URL nach gps-sport.net gefunden. Login kann trotzdem geklappt haben; nächste Abfrage wird es zeigen."
+    }
+
+    return [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS
 }
 
 Function Disconnect-RunGPS {
