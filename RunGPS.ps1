@@ -566,11 +566,23 @@ $headers = @{
 
 # Datumsangaben im ISO-Format YYYY-MM-DDD, gibt maximal 1000 Einträge zurück, evtl. muss der Datumsbereich durch zwei
 # oder mehrere Aufrufe gesplittet werden!
-$r2=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userRoutes.jsp?userName=$($User)&startDate=2006-10-18&endDate=2023-02-06&sport=&searchTerm=&submitButton=Aktualisieren#" -Headers $headers
+$routeUri = "https://www.gps-sport.net/userRoutes.jsp?userName=$([uri]::EscapeDataString($User))&startDate=2006-10-18&endDate=2023-02-06&sport=&searchTerm=&submitButton=Aktualisieren"
 
-$r3=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2006-10-26&endDate=2017-12-31&sport=&submitButton=Aktualisieren#" -Headers $headers
+$r2 = Invoke-WebRequest `
+    -WebSession $runGPS `
+    -Uri $routeUri `
+    -Headers $headers `
+    -MaximumRedirection 10 `
+    -ErrorAction Stop
 
-$r4=Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2018-01-01&endDate=2023-02-06&sport=&submitButton=Aktualisieren#" -Headers $headers
+Write-Host "Routes response: HTTP $($r2.StatusCode), Content length: $($r2.Content.Length)"
+Write-Host "Routes final URI: $($r2.BaseResponse.RequestMessage.RequestUri)"
+Write-Host "Routes content preview:"
+Write-Host ($r2.Content.Substring(0, [Math]::Min(500, $r2.Content.Length)))
+
+$r3=Invoke-WebRequest -WebSession $runGPS -Uri "https://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2006-10-26&endDate=2017-12-31&sport=&submitButton=Aktualisieren#" -Headers $headers
+
+$r4=Invoke-WebRequest -WebSession $runGPS -Uri "https://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2018-01-01&endDate=2023-02-06&sport=&submitButton=Aktualisieren#" -Headers $headers
 
 ### ROUTEN
 # Routes
