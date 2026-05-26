@@ -43,6 +43,14 @@ jobs:
           RUNGPSPASSWORD: ${{ secrets.RUNGPSPASSWORD }}
         run: |
           # . ./RunGPS.ps1
+          $ErrorActionPreference = 'Stop'
+
+          if (-not (Get-PSDrive -Name C -ErrorAction SilentlyContinue)) {
+            New-PSDrive -Name C -PSProvider FileSystem -Root '/tmp' | Out-Null
+          }
+
+          New-Item -ItemType Directory -Force -Path 'C:\Temp\RunGPS' | Out-Null
+         
           ./RunGPS.ps1
           # ./Tests/Abfragen.ps1
         shell: pwsh
