@@ -12,16 +12,16 @@ jobs:
   # This workflow contains a single job called "build"
   build:
     # The type of runner that the job will run on
-    #runs-on: windows-latest
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    #runs-on: ubuntu-latest
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Upgrade to latest powershell on Linux
-        if: true
+        if: false
         run: |
           # docs: https://learn.microsoft.com/de-de/powershell/scripting/install/install-other-linux?view=powershell-7.3#installation-using-a-binary-archive-file
           # Download the powershell '.tar.gz' archive
@@ -45,4 +45,5 @@ jobs:
           # . ./RunGPS.ps1
           ./RunGPS.ps1
           # ./Tests/Abfragen.ps1
-        shell: pwsh
+        # shell: pwsh
+        shell: powershell
