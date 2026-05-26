@@ -2,6 +2,19 @@
 
 Import-Module PowerHTML -ErrorAction Stop
 
+function New-QueryString {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Query
+    )
+
+    ($Query.GetEnumerator() | ForEach-Object {
+        '{0}={1}' -f `
+            [uri]::EscapeDataString([string]$_.Key), `
+            [uri]::EscapeDataString([string]$_.Value)
+    }) -join '&'
+}
+
 function ConvertFrom-HtmlText {
     param([object]$Node)
 
@@ -566,7 +579,15 @@ $headers = @{
 
 # Datumsangaben im ISO-Format YYYY-MM-DDD, gibt maximal 1000 Einträge zurück, evtl. muss der Datumsbereich durch zwei
 # oder mehrere Aufrufe gesplittet werden!
-$routeUri = "https://www.gps-sport.net/userRoutes.jsp?userName=$([uri]::EscapeDataString($User))&startDate=2006-10-18&endDate=2023-02-06&sport=&searchTerm=&submitButton=Aktualisieren"
+$routeQuery = [ordered]@{
+    userName   = $User
+    startDate  = '2006-10-18'
+    endDate    = '2023-02-06'
+    sport      = ''
+    searchTerm = ''
+}
+
+$routeUri = 'https://www.gps-sport.net/userRoutes.jsp?' + (New-QueryString -Query $routeQuery)
 
 $r2 = Invoke-WebRequest `
     -WebSession $runGPS `
@@ -578,7 +599,7 @@ $r2 = Invoke-WebRequest `
 Write-Host "Routes response: HTTP $($r2.StatusCode), Content length: $($r2.Content.Length)"
 Write-Host "Routes final URI: $($r2.BaseResponse.RequestMessage.RequestUri)"
 Write-Host "Routes content preview:"
-Write-Host ($r2.Content.Substring(0, [Math]::Min(500, $r2.Content.Length)))
+Write-Host ($r2.Content.Substring(0, [Math]::Min(1000, $r2.Content.Length)))
 
 $r3=Invoke-WebRequest -WebSession $runGPS -Uri "https://www.gps-sport.net/userTrainings.jsp?userName=$($user)&startDate=2006-10-26&endDate=2017-12-31&sport=&submitButton=Aktualisieren#" -Headers $headers
 
