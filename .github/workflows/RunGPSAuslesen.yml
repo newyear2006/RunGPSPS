@@ -61,3 +61,12 @@ jobs:
           # ./Tests/Abfragen.ps1
         shell: pwsh
         #shell: powershell
+
+      - name: Upload debug HTML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rungps-debug-html
+          path: |
+            debug-*.html
+          if-no-files-found: ignore
