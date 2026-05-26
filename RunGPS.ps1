@@ -51,7 +51,7 @@ Function NewRoute {
                       ID=[int]$htmlRoute.children[2].childNodes[0].pathname.substring($htmlRoute.children[2].childNodes[0].pathname.LastIndexOf("_")+1);
                       Titel=$htmlRoute.children[2].innerText;
                       Distanz=[decimal]$htmlRoute.children[3].innerText;
-                      Läufe=[int]$htmlRoute.children[4].innerText;
+                      Laeufe=[int]$htmlRoute.children[4].innerText;
                       Ort=$htmlRoute.children[5].innerText;
                       Land=$htmlRoute.children[6].innerText;
                       Aufstieg=[int]$htmlRoute.children[7].innerText;
@@ -120,8 +120,8 @@ function NewTraining {
                       TrittfrequenzD=[decimal]$htmlTraining.children[7].innerText;
                       GeschwindigkeitD=[decimal]$htmlTraining.children[8].innerText;
                       GeschwindigkeitDA=[decimal]$htmlTraining.children[9].innerText;
-                      HöheMin=[int]$htmlTraining.children[10].innerText;
-                      HöheMax=[int]$htmlTraining.children[11].innerText;
+                      HoeheMin=[int]$htmlTraining.children[10].innerText;
+                      HoeheMax=[int]$htmlTraining.children[11].innerText;
                       Abstieg=[int]$htmlTraining.children[12].innerText;
                       Aufstieg=[int]$htmlTraining.children[13].innerText;
                       Gewicht=[int]$htmlTraining.children[14].innerText;
