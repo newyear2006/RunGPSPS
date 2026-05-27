@@ -447,97 +447,228 @@ Function Get-MonthToGo {
     $t2|where datum -gt (Get-date).AddYears(-1) |select ID, datum, Distanz, Dauer, Distanzbereich|measure -sum -Property Distanz
 }
 
-Function Connect-RunGPS {
-    [CmdletBinding()]
-    Param (
+function Get-HtmlAttribute {
+    param(
         [Parameter(Mandatory)]
-        [PSCredential]$Credential
+        [string]$Tag,
+
+        [Parameter(Mandatory)]
+        [string]$Name
     )
 
-    $ErrorActionPreference = 'Stop'
+    $pattern = '(?is)\b' + [regex]::Escape($Name) + '\s*=\s*(?:"([^"]*)"|''([^'']*)''|([^>\s]+))'
+    $match = [regex]::Match($Tag, $pattern)
 
-    # Für Windows PowerShell 5.1 auf alten/strengen HTTPS-Seiten
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-    $uri = 'https://www.rungps.net/login.jsp'
-
-    Write-Host "GET $uri"
-    $l = Invoke-WebRequest `
-        -Uri $uri `
-        -SessionVariable runGPS `
-        -UseBasicParsing `
-        -ErrorAction Stop
-
-    if (-not $runGPS) {
-        throw "WebSession wurde nicht erzeugt."
+    if (-not $match.Success) {
+        return $null
     }
 
-    # Passwort aus PSCredential holen
-    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
+    foreach ($groupIndex in 1..3) {
+        if ($match.Groups[$groupIndex].Success) {
+            return [System.Net.WebUtility]::HtmlDecode($match.Groups[$groupIndex].Value)
+        }
+    }
+
+    return $null
+}
+
+function Get-FirstHtmlForm {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Html
+    )
+
+    $match = [regex]::Match($Html, '(?is)<form\b(?<attrs>[^>]*)>(?<inner>.*?)</form>')
+
+    if (-not $match.Success) {
+        throw 'Kein HTML-Formular in login.jsp gefunden.'
+    }
+
+    [PSCustomObject]@{
+        Attributes = $match.Groups['attrs'].Value
+        InnerHtml  = $match.Groups['inner'].Value
+    }
+}
+
+function Get-HtmlFormFields {
+    param(
+        [Parameter(Mandatory)]
+        [string]$FormInnerHtml
+    )
+
+    $fields = [ordered]@{}
+
+    $inputMatches = [regex]::Matches($FormInnerHtml, '(?is)<input\b[^>]*>')
+
+    foreach ($inputMatch in $inputMatches) {
+        $tag = $inputMatch.Value
+        $name = Get-HtmlAttribute -Tag $tag -Name 'name'
+
+        if ([string]::IsNullOrWhiteSpace($name)) {
+            continue
+        }
+
+        $value = Get-HtmlAttribute -Tag $tag -Name 'value'
+
+        if ($null -eq $value) {
+            $value = ''
+        }
+
+        $fields[$name] = $value
+    }
+
+    return $fields
+}
+
+function Get-FirstImageUri {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Html,
+
+        [Parameter(Mandatory)]
+        [uri]$BaseUri
+    )
+
+    $imgMatch = [regex]::Match($Html, '(?is)<img\b[^>]*>')
+
+    if (-not $imgMatch.Success) {
+        return $null
+    }
+
+    $tag = $imgMatch.Value
+
+    foreach ($attrName in @('src', 'href')) {
+        $raw = Get-HtmlAttribute -Tag $tag -Name $attrName
+
+        if (-not [string]::IsNullOrWhiteSpace($raw)) {
+            return ([uri]::new($BaseUri, $raw)).AbsoluteUri
+        }
+    }
+
+    return $null
+}
+
+function ConvertFrom-SecureStringToPlainText {
+    param(
+        [Parameter(Mandatory)]
+        [securestring]$SecureString
+    )
+
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+
     try {
-        $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+        [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
     }
     finally {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
     }
+}
 
-    # Formular-Action aus HTML lesen, ohne IE/MSHTML
-    $formAction = $null
-    if ($l.Content -match '<form[^>]+action=["'']?([^"'' >]+)') {
-        $formAction = $matches[1]
+function Show-RunGpsCookies {
+    param(
+        [Parameter(Mandatory)]
+        [Microsoft.PowerShell.Commands.WebRequestSession]$Session
+    )
+
+    foreach ($uriText in @(
+        'https://www.rungps.net/',
+        'https://www.gps-sport.net/',
+        'http://www.gps-sport.net/'
+    )) {
+        $uri = [uri]$uriText
+        $cookies = @($Session.Cookies.GetCookies($uri))
+
+        Write-Host "Cookies for $uriText : $($cookies.Count)"
+
+        foreach ($cookie in $cookies) {
+            Write-Host ("  {0}; Domain={1}; Path={2}; Secure={3}" -f `
+                $cookie.Name,
+                $cookie.Domain,
+                $cookie.Path,
+                $cookie.Secure)
+        }
+    }
+}
+
+function Connect-RunGPS {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [PSCredential]$Credential
+    )
+
+    $headers = @{
+        'User-Agent'      = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36'
+        'Accept'          = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
+        'Accept-Language' = 'de-DE,de;q=0.9,en;q=0.8'
+        'Cache-Control'   = 'no-cache'
     }
 
+    $loginUri = [uri]'https://www.rungps.net/login.jsp'
+
+    Write-Host "GET $loginUri"
+
+    $loginPage = Invoke-WebRequest `
+        -Uri $loginUri `
+        -SessionVariable runGPS `
+        -Headers $headers `
+        -MaximumRedirection 10 `
+        -ErrorAction Stop
+
+    $form = Get-FirstHtmlForm -Html $loginPage.Content
+    $formAction = Get-HtmlAttribute -Tag $form.Attributes -Name 'action'
+
     if ([string]::IsNullOrWhiteSpace($formAction)) {
-        Write-Warning "Keine form action gefunden; verwende login.jsp als Fallback."
         $formAction = 'login.jsp'
     }
 
-    $loginUri = ([Uri]::new([Uri]$uri, $formAction)).AbsoluteUri
-    Write-Host "POST $loginUri"
+    $postUri = [uri]::new($loginUri, $formAction)
 
-    $body = @{
-        userName  = $Credential.UserName
-        password1 = $plainPassword
-    }
+    $body = Get-HtmlFormFields -FormInnerHtml $form.InnerHtml
+    $body['userName'] = $Credential.UserName
+    $body['password1'] = ConvertFrom-SecureStringToPlainText -SecureString $Credential.Password
 
-    $r = Invoke-WebRequest `
-        -Uri $loginUri `
+    Write-Host "POST $postUri"
+
+    $loginPost = Invoke-WebRequest `
+        -Uri $postUri `
         -Method Post `
         -Body $body `
         -ContentType 'application/x-www-form-urlencoded' `
         -WebSession $runGPS `
-        -UseBasicParsing `
+        -Headers $headers `
         -MaximumRedirection 10 `
         -ErrorAction Stop
 
-    # Diagnose: nicht das Passwort ausgeben!
-    Write-Host "Login response: HTTP $($r.StatusCode), Content length: $($r.Content.Length)"
+    Write-Host "Login response: HTTP $($loginPost.StatusCode), Content length: $($loginPost.Content.Length)"
 
-    # Alter Code nutzte: $r.ParsedHtml.images[0].href
-    # Das geht mit -UseBasicParsing nicht mehr. Deshalb URL aus dem HTML extrahieren.
-    $bridgeUrl = $null
+    $firstImageUri = Get-FirstImageUri `
+        -Html $loginPost.Content `
+        -BaseUri $loginPost.BaseResponse.RequestMessage.RequestUri
 
-    if ($r.Content -match '(https?://(?:www\.)?gps-sport\.net/[^"'' <]+)') {
-        $bridgeUrl = $matches[1]
-    }
-    elseif ($r.Content -match '<img[^>]+(?:src|href)=["'']([^"'']+)') {
-        $bridgeUrl = ([Uri]::new([Uri]$loginUri, $matches[1])).AbsoluteUri
+    if ([string]::IsNullOrWhiteSpace($firstImageUri)) {
+        throw 'Login erfolgreich? Es wurde kein Bridge-Image in der Login-Antwort gefunden.'
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($bridgeUrl)) {
-        Write-Host "Bridge request: $bridgeUrl"
+    Write-Host "Bridge image request: $firstImageUri"
 
-        $wp = Invoke-WebRequest `
-            -WebSession $runGPS `
-            -Uri $bridgeUrl `
-            -UseBasicParsing `
-            -ErrorAction Stop
+    $bridgeResponse = Invoke-WebRequest `
+        -Uri $firstImageUri `
+        -WebSession $runGPS `
+        -Headers $headers `
+        -MaximumRedirection 10 `
+        -ErrorAction Stop
 
-        Write-Host "Bridge response: HTTP $($wp.StatusCode), Content length: $($wp.Content.Length)"
+    Write-Host "Bridge response: HTTP $($bridgeResponse.StatusCode), Content length: $($bridgeResponse.Content.Length)"
+
+    $gpsSportCookieCount = @($runGPS.Cookies.GetCookies([uri]'https://www.gps-sport.net/')).Count
+
+    if ($gpsSportCookieCount -eq 0) {
+        Show-RunGpsCookies -Session $runGPS
+        throw 'Nach dem Bridge-Image wurde kein Cookie für gps-sport.net erzeugt.'
     }
-    else {
-        Write-Warning "Keine Bridge-URL nach gps-sport.net gefunden. Login kann trotzdem geklappt haben; nächste Abfrage wird es zeigen."
-    }
+
+    Write-Host "Authentication OK. gps-sport.net cookies: $gpsSportCookieCount"
 
     return [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS
 }
@@ -573,6 +704,26 @@ $cred = New-Object -Typename System.Management.Automation.PSCredential -Argument
 "und?"
 $cred
 $runGPS = Connect-RunGPS -Credential $cred
+
+Write-Host "------------------- Testaufruf ------------------"
+$headers = @{
+    'User-Agent'      = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36'
+    'Accept'          = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
+    'Accept-Language' = 'de-DE,de;q=0.9,en;q=0.8'
+}
+
+$r2 = Invoke-WebRequest `
+    -WebSession $runGPS `
+    -Uri "https://www.gps-sport.net/userRoutes.jsp?userName=$([uri]::EscapeDataString($User))&startDate=2006-10-18&endDate=2023-02-06&sport=&searchTerm=&submitButton=Aktualisieren" `
+    -Headers $headers `
+    -MaximumRedirection 10 `
+    -ErrorAction Stop
+
+Write-Host "Routes response: HTTP $($r2.StatusCode), Content length: $($r2.Content.Length)"
+Write-Host "------------------- nach Test------------------"
+
+
+
 $headers = @{
     Accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
 }
