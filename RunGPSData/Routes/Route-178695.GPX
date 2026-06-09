@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+
+
+
+
+
+
+
+
+
+
+<gpx version="1.1" creator="Run.GPS Community Server" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" schemaLocation="http://www.topografix.com/GPX/1/1/gpx.xsd" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Iskender</name>
+    <author>MikeH</author>
+    <link href="https://www.rungps.net">
+      <text>Run.GPS by eSymetric GmbH</text>
+    </link>
+  </metadata>
+  <trk>
+    <name>Iskender</name>
+    <desc></desc>
+    <extensions>
+        <sport>sightseeing</sport>
+        <type> </type>
+        <trackQuality>0</trackQuality>
+        <isPublic>false</isPublic>
+        <ascent>11.4</ascent>
+        <descent>10.4</descent>
+        <maxLat>-1000.0</maxLat>
+        <minLat>1000.0</minLat>
+        <maxLng>-1000.0</maxLng>
+        <minLng>1000.0</minLng>
+    </extensions>
+    <trkseg>
+        <trkpt lon="29.068408" lat="40.231585">  <ele>93.0</ele>
+</trkpt>
+<trkpt lon="29.068689" lat="40.231377">  <ele>93.0</ele>
+</trkpt>
+<trkpt lon="29.068199" lat="40.231915">  <ele>89.0</ele>
+</trkpt>
+<trkpt lon="29.06786" lat="40.23243">  <ele>89.0</ele>
+</trkpt>
+<trkpt lon="29.067717" lat="40.232841">  <ele>90.0</ele>
+</trkpt>
+<trkpt lon="29.067717" lat="40.232841">  <ele>90.0</ele>
+</trkpt>
+<trkpt lon="29.067689" lat="40.233125">  <ele>90.0</ele>
+</trkpt>
+<trkpt lon="29.066863" lat="40.233199">  <ele>89.0</ele>
+</trkpt>
+<trkpt lon="29.066917" lat="40.235844">  <ele>90.0</ele>
+</trkpt>
+<trkpt lon="29.063237" lat="40.236049">  <ele>89.0</ele>
+</trkpt>
+<trkpt lon="29.062668" lat="40.236074">  <ele>88.0</ele>
+</trkpt>
+<trkpt lon="29.062539" lat="40.233723">  <ele>90.0</ele>
+</trkpt>
+<trkpt lon="29.061713" lat="40.233838">  <ele>90.0</ele>
+</trkpt>
+<trkpt lon="29.061091" lat="40.232691">  <ele>90.0</ele>
+</trkpt>
+<trkpt lon="29.061284" lat="40.232642">  <ele>91.0</ele>
+</trkpt>
+<trkpt lon="29.058988" lat="40.228907">  <ele>90.0</ele>
+</trkpt>
+<trkpt lon="29.057486" lat="40.229398">  <ele>89.0</ele>
+</trkpt>
+<trkpt lon="29.053774" lat="40.224811">  <ele>91.0</ele>
+</trkpt>
+<trkpt lon="29.049568" lat="40.222223">  <ele>93.0</ele>
+</trkpt>
+<trkpt lon="29.04386" lat="40.22296">  <ele>94.0</ele>
+</trkpt>
+<trkpt lon="29.042466" lat="40.217668">  <ele>96.0</ele>
+</trkpt>
+<trkpt lon="29.039698" lat="40.217488">  <ele>99.0</ele>
+</trkpt>
+<trkpt lon="29.039869" lat="40.218307">  <ele>97.0</ele>
+</trkpt>
+<trkpt lon="29.041564" lat="40.218143">  <ele>94.0</ele>
+</trkpt>
+
+    </trkseg>
+  </trk>
+</gpx>    
+    

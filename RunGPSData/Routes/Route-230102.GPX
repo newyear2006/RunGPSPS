@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+
+
+
+
+
+
+
+
+
+
+<gpx version="1.1" creator="Run.GPS Community Server" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" schemaLocation="http://www.topografix.com/GPX/1/1/gpx.xsd" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Los Christianos Palm-Mar Schwimmen</name>
+    <author>MikeH</author>
+    <link href="https://www.rungps.net">
+      <text>Run.GPS by eSymetric GmbH</text>
+    </link>
+  </metadata>
+  <trk>
+    <name>Los Christianos Palm-Mar Schwimmen</name>
+    <desc></desc>
+    <extensions>
+        <sport>swimming</sport>
+        <type> </type>
+        <trackQuality>1</trackQuality>
+        <isPublic>true</isPublic>
+        <ascent>3.0</ascent>
+        <descent>0.0</descent>
+        <maxLat>-1000.0</maxLat>
+        <minLat>1000.0</minLat>
+        <maxLng>-1000.0</maxLng>
+        <minLng>1000.0</minLng>
+    </extensions>
+    <trkseg>
+        <trkpt lon="-16.710435" lat="28.043529">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.710784" lat="28.043638">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.71109" lat="28.043572">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.71175" lat="28.043141">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711857" lat="28.042781">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711879" lat="28.042312">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711728" lat="28.042043">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711621" lat="28.04164">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711401" lat="28.040864">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711288" lat="28.040045">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711208" lat="28.039457">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711117" lat="28.038743">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711208" lat="28.037777">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.71117" lat="28.036915">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711219" lat="28.036479">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711192" lat="28.03474">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.711015" lat="28.033907">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.710875" lat="28.033296">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.710457" lat="28.031799">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.709915" lat="28.030748">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.709127" lat="28.030099">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.707828" lat="28.028906">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.7066" lat="28.028196">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.705763" lat="28.028063">  <ele>0.0</ele>
+</trkpt>
+<trkpt lon="-16.704744" lat="28.027751">  <ele>3.0</ele>
+</trkpt>
+
+    </trkseg>
+  </trk>
+</gpx>    
+    
