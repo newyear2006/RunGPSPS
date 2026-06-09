@@ -1,0 +1,27 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "2835391",
+        "file": "2835391.TCX"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -16.69591437,
+            28.07368393,
+            313.450443455
+          ],
+          [
+            -16.69591151,
+            28.07368249,
+            313.499036445
+          ]
+        ]
+      }
+    }
+  ]
+}
