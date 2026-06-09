@@ -1,5 +1,11 @@
 # RunGPS-Powershellroutinen
 
+$culture = [System.Globalization.CultureInfo]::GetCultureInfo('de-DE')
+[System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
+[System.Threading.Thread]::CurrentThread.CurrentUICulture = $culture
+[System.Globalization.CultureInfo]::DefaultThreadCurrentCulture = $culture
+[System.Globalization.CultureInfo]::DefaultThreadCurrentUICulture = $culture
+
 Import-Module PowerHTML -ErrorAction Stop
 
 function New-QueryString {
