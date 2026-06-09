@@ -803,6 +803,12 @@ function New-RunGpsTrainingsGeoJson {
         features = @($features)
     }
 
+	$outDir = Split-Path -Path $OutFile -Parent
+	
+	if (-not [string]::IsNullOrWhiteSpace($outDir)) {
+	    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+	}
+
     $geoJson |
         ConvertTo-Json -Depth 20 |
         Set-Content -Path $OutFile -Encoding utf8
