@@ -648,8 +648,15 @@ function Convert-RunGpsTcxToGeoJson {
         [string]$TcxPath,
 
         [Parameter(Mandatory)]
-        [string]$OutFile
+        [string]$OutFile,
+
+        [switch]$Force
     )
+
+    if ((-not $Force) -and (Test-Path $OutFile -PathType Leaf)) {
+        Write-Host "Skip existing GeoJSON: $OutFile"
+        return
+    }
 
     [xml]$xml = Get-Content -Path $TcxPath -Raw
 
@@ -666,21 +673,32 @@ function Convert-RunGpsTcxToGeoJson {
         return
     }
 
-    $coordinates = foreach ($tp in $trackpoints) {
+    $coordinates = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($tp in $trackpoints) {
         $latText = $tp.Position.LatitudeDegrees
         $lonText = $tp.Position.LongitudeDegrees
         $altText = $tp.AltitudeMeters
 
-        $lat = [double]::Parse($latText, [Globalization.CultureInfo]::InvariantCulture)
-        $lon = [double]::Parse($lonText, [Globalization.CultureInfo]::InvariantCulture)
+        if ([string]::IsNullOrWhiteSpace($latText) -or [string]::IsNullOrWhiteSpace($lonText)) {
+            continue
+        }
+
+        $lat = [double]::Parse($latText, [System.Globalization.CultureInfo]::InvariantCulture)
+        $lon = [double]::Parse($lonText, [System.Globalization.CultureInfo]::InvariantCulture)
 
         if (-not [string]::IsNullOrWhiteSpace($altText)) {
-            $alt = [double]::Parse($altText, [Globalization.CultureInfo]::InvariantCulture)
-            @($lon, $lat, $alt)
+            $alt = [double]::Parse($altText, [System.Globalization.CultureInfo]::InvariantCulture)
+            $coordinates.Add(@($lon, $lat, $alt))
         }
         else {
-            @($lon, $lat)
+            $coordinates.Add(@($lon, $lat))
         }
+    }
+
+    if ($coordinates.Count -lt 2) {
+        Write-Warning "Zu wenige Koordinaten für LineString: $TcxPath"
+        return
     }
 
     $id = [IO.Path]::GetFileNameWithoutExtension($TcxPath)
@@ -696,20 +714,22 @@ function Convert-RunGpsTcxToGeoJson {
                 }
                 geometry   = [ordered]@{
                     type        = 'LineString'
-                    coordinates = @($coordinates)
+                    coordinates = $coordinates
                 }
             }
         )
     }
 
-    $outDir = Split-Path $OutFile -Parent
-    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+    $outDir = Split-Path -Path $OutFile -Parent
+    if (-not [string]::IsNullOrWhiteSpace($outDir)) {
+        New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+    }
 
     $geoJson |
-        ConvertTo-Json -Depth 20 |
+        ConvertTo-Json -Depth 50 |
         Set-Content -Path $OutFile -Encoding utf8
 
-    Write-Host "GeoJSON geschrieben: $OutFile"
+    Write-Host "GeoJSON geschrieben: $OutFile; Punkte: $($coordinates.Count)"
 }
 
 function Convert-AllRunGpsTcxToGeoJson {
