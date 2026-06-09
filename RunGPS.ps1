@@ -520,7 +520,7 @@ function Get-HtmlFormFields {
     return $fields
 }
 
-function Get-FirstImageUri {
+function Get-RunGpsBridgeImageUri {
     param(
         [Parameter(Mandatory)]
         [string]$Html,
@@ -529,19 +529,23 @@ function Get-FirstImageUri {
         [uri]$BaseUri
     )
 
-    $imgMatch = [regex]::Match($Html, '(?is)<img\b[^>]*>')
+    $imgMatches = [regex]::Matches($Html, '(?is)<img\b[^>]*>')
 
-    if (-not $imgMatch.Success) {
-        return $null
-    }
+    foreach ($imgMatch in $imgMatches) {
+        $tag = $imgMatch.Value
 
-    $tag = $imgMatch.Value
+        foreach ($attrName in @('src', 'href')) {
+            $raw = Get-HtmlAttribute -Tag $tag -Name $attrName
 
-    foreach ($attrName in @('src', 'href')) {
-        $raw = Get-HtmlAttribute -Tag $tag -Name $attrName
+            if ([string]::IsNullOrWhiteSpace($raw)) {
+                continue
+            }
 
-        if (-not [string]::IsNullOrWhiteSpace($raw)) {
-            return ([uri]::new($BaseUri, $raw)).AbsoluteUri
+            $absolute = ([uri]::new($BaseUri, $raw)).AbsoluteUri
+
+            if ($absolute -match '(?i)^https?://www\.gps-sport\.net/whitePixel\.jsp\?') {
+                return $absolute
+            }
         }
     }
 
@@ -642,23 +646,25 @@ function Connect-RunGPS {
 
     Write-Host "Login response: HTTP $($loginPost.StatusCode), Content length: $($loginPost.Content.Length)"
 
-    $firstImageUri = Get-FirstImageUri `
-        -Html $loginPost.Content `
-        -BaseUri $loginPost.BaseResponse.RequestMessage.RequestUri
+    $bridgeImageUri = Get-RunGpsBridgeImageUri `
+    	-Html $loginPost.Content `
+    	-BaseUri $loginPost.BaseResponse.RequestMessage.RequestUri
 
-    if ([string]::IsNullOrWhiteSpace($firstImageUri)) {
-        throw 'Login erfolgreich? Es wurde kein Bridge-Image in der Login-Antwort gefunden.'
-    }
+	if ([string]::IsNullOrWhiteSpace($bridgeImageUri)) {
+    	$debugFile = Join-Path $PWD 'debug-login-post.html'
+    	$loginPost.Content | Set-Content -Path $debugFile -Encoding utf8
 
-    Write-Host "Bridge image request: $firstImageUri"
+    	Write-Host "Login response: HTTP $($loginPost.StatusCode), Content length: $($loginPost.Content.Length)"
+	    Write-Host "Login POST debug saved: $debugFile"
 
-    $bridgeResponse = Invoke-WebRequest `
-        -Uri $firstImageUri `
-        -WebSession $runGPS `
-        -Headers $headers `
-        -MaximumRedirection 10 `
-        -ErrorAction Stop
+    	throw 'Login fehlgeschlagen oder unerwartete Login-Antwort: Kein gps-sport.net/whitePixel.jsp gefunden. RUNGPSUSER/RUNGPSPASSWORD prüfen.'
+	}
 
+	Write-Host "Bridge image request: $bridgeImageUri"
+
+	$bridgeResponse = Invoke-WebRequest `
+    	-Uri $bridgeImageUri `
+	
     Write-Host "Bridge response: HTTP $($bridgeResponse.StatusCode), Content length: $($bridgeResponse.Content.Length)"
 
     $gpsSportCookieCount = @($runGPS.Cookies.GetCookies([uri]'https://www.gps-sport.net/')).Count
@@ -683,6 +689,22 @@ Function Disconnect-RunGPS {
 
 }
 
+function Get-Sha256Fingerprint {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Text,
+
+        [int]$Length = 16
+    )
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+    $hashBytes = [System.Security.Cryptography.SHA256]::HashData($bytes)
+    $hash = ([BitConverter]::ToString($hashBytes) -replace '-', '').ToLowerInvariant()
+
+    return $hash.Substring(0, [Math]::Min($Length, $hash.Length))
+}
+
 # zum Prüfen, was auf der anderen Seite ankommt: https://pipedream.com/requestbin 
 # früher: http://requestb.in/
 
@@ -701,8 +723,27 @@ $user=$env:RUNGPSUSER
 "user-Länge: $($user.length)"
 $password = ConvertTo-SecureString $env:RUNGPSPASSWORD -AsPlainText -Force
 $cred = New-Object -Typename System.Management.Automation.PSCredential -Argumentlist $user, $password
-"und?"
-$cred
+
+if ([string]::IsNullOrWhiteSpace($env:RUNGPSUSER)) {
+    throw "Secret RUNGPSUSER fehlt oder ist leer."
+}
+
+if ([string]::IsNullOrWhiteSpace($env:RUNGPSPASSWORD)) {
+    throw "Secret RUNGPSPASSWORD fehlt oder ist leer."
+}
+
+$user = $env:RUNGPSUSER
+$passwordPlain = $env:RUNGPSPASSWORD
+
+Write-Host "RUNGPSUSER length: $($user.Length)"
+Write-Host "RUNGPSUSER sha256-16: $(Get-Sha256Fingerprint -Text $user)"
+
+Write-Host "RUNGPSPASSWORD length: $($passwordPlain.Length)"
+Write-Host "RUNGPSPASSWORD sha256-16: $(Get-Sha256Fingerprint -Text $passwordPlain)"
+
+$securePassword = ConvertTo-SecureString $passwordPlain -AsPlainText -Force
+$cred = [PSCredential]::new($user, $securePassword)
+
 $runGPS = Connect-RunGPS -Credential $cred
 
 Write-Host "------------------- Testaufruf ------------------"
