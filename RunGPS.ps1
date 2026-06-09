@@ -420,7 +420,7 @@ Function Get-Trainings {
 		$Trainings += $newTrainings
 	  }
     }
-  $Trainings | sort Datum
+  $Trainings | Sort-Object -Property Datum
 }
 
 # ermittelt die im aktuellen Monat noch zu leistenden Werte, im Vergleich zum Vorjahresmonat
