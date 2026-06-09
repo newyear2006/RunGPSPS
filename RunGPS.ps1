@@ -641,90 +641,174 @@ function Show-RunGpsCookies {
     }
 }
 
-function Connect-RunGPS {
+function Convert-RunGpsTcxToGeoJson {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [PSCredential]$Credential
+        [string]$TcxPath,
+
+        [Parameter(Mandatory)]
+        [string]$OutFile
     )
 
-    $headers = @{
-        'User-Agent'      = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36'
-        'Accept'          = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
-        'Accept-Language' = 'de-DE,de;q=0.9,en;q=0.8'
-        'Cache-Control'   = 'no-cache'
+    [xml]$xml = Get-Content -Path $TcxPath -Raw
+
+    $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+    $ns.AddNamespace('tcx', 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2')
+
+    $trackpoints = $xml.SelectNodes(
+        '//tcx:Trackpoint[tcx:Position/tcx:LatitudeDegrees and tcx:Position/tcx:LongitudeDegrees]',
+        $ns
+    )
+
+    if ($null -eq $trackpoints -or $trackpoints.Count -eq 0) {
+        Write-Warning "Keine Koordinaten gefunden: $TcxPath"
+        return
     }
 
-    $loginUri = [uri]'https://www.rungps.net/login.jsp'
+    $coordinates = foreach ($tp in $trackpoints) {
+        $latText = $tp.Position.LatitudeDegrees
+        $lonText = $tp.Position.LongitudeDegrees
+        $altText = $tp.AltitudeMeters
 
-    Write-Host "GET $loginUri"
+        $lat = [double]::Parse($latText, [Globalization.CultureInfo]::InvariantCulture)
+        $lon = [double]::Parse($lonText, [Globalization.CultureInfo]::InvariantCulture)
 
-    $loginPage = Invoke-WebRequest `
-        -Uri $loginUri `
-        -SessionVariable runGPS `
-        -Headers $headers `
-        -MaximumRedirection 10 `
-        -ErrorAction Stop
-
-    $form = Get-FirstHtmlForm -Html $loginPage.Content
-    $formAction = Get-HtmlAttribute -Tag $form.Attributes -Name 'action'
-
-    if ([string]::IsNullOrWhiteSpace($formAction)) {
-        $formAction = 'login.jsp'
+        if (-not [string]::IsNullOrWhiteSpace($altText)) {
+            $alt = [double]::Parse($altText, [Globalization.CultureInfo]::InvariantCulture)
+            @($lon, $lat, $alt)
+        }
+        else {
+            @($lon, $lat)
+        }
     }
 
-    $postUri = [uri]::new($loginUri, $formAction)
+    $id = [IO.Path]::GetFileNameWithoutExtension($TcxPath)
 
-    $body = Get-HtmlFormFields -FormInnerHtml $form.InnerHtml
-    $body['userName'] = $Credential.UserName
-	$body['userID'] = $Credential.UserName
-    $body['password1'] = ConvertFrom-SecureStringToPlainText -SecureString $Credential.Password
-
-    Write-Host "POST $postUri"
-
-    $loginPost = Invoke-WebRequest `
-        -Uri $postUri `
-        -Method Post `
-        -Body $body `
-        -ContentType 'application/x-www-form-urlencoded' `
-        -WebSession $runGPS `
-        -Headers $headers `
-        -MaximumRedirection 10 `
-        -ErrorAction Stop
-
-    Write-Host "Login response: HTTP $($loginPost.StatusCode), Content length: $($loginPost.Content.Length)"
-
-    $bridgeImageUri = Get-RunGpsBridgeImageUri `
-    	-Html $loginPost.Content `
-    	-BaseUri $loginPost.BaseResponse.RequestMessage.RequestUri
-
-	if ([string]::IsNullOrWhiteSpace($bridgeImageUri)) {
-    	$debugFile = Join-Path $PWD 'debug-login-post.html'
-    	$loginPost.Content | Set-Content -Path $debugFile -Encoding utf8
-
-    	Write-Host "Login response: HTTP $($loginPost.StatusCode), Content length: $($loginPost.Content.Length)"
-	    Write-Host "Login POST debug saved: $debugFile"
-
-    	throw 'Login fehlgeschlagen oder unerwartete Login-Antwort: Kein gps-sport.net/whitePixel.jsp gefunden. RUNGPSUSER/RUNGPSPASSWORD prüfen.'
-	}
-
-	Write-Host "Bridge image request: $bridgeImageUri"
-
-	$bridgeResponse = Invoke-WebRequest `
-    	-Uri $bridgeImageUri `
-	
-    Write-Host "Bridge response: HTTP $($bridgeResponse.StatusCode), Content length: $($bridgeResponse.Content.Length)"
-
-    $gpsSportCookieCount = @($runGPS.Cookies.GetCookies([uri]'https://www.gps-sport.net/')).Count
-
-    if ($gpsSportCookieCount -eq 0) {
-        Show-RunGpsCookies -Session $runGPS
-        throw 'Nach dem Bridge-Image wurde kein Cookie für gps-sport.net erzeugt.'
+    $geoJson = [ordered]@{
+        type     = 'FeatureCollection'
+        features = @(
+            [ordered]@{
+                type       = 'Feature'
+                properties = [ordered]@{
+                    id   = $id
+                    file = [IO.Path]::GetFileName($TcxPath)
+                }
+                geometry   = [ordered]@{
+                    type        = 'LineString'
+                    coordinates = @($coordinates)
+                }
+            }
+        )
     }
 
-    Write-Host "Authentication OK. gps-sport.net cookies: $gpsSportCookieCount"
+    $outDir = Split-Path $OutFile -Parent
+    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-    return [Microsoft.PowerShell.Commands.WebRequestSession]$runGPS
+    $geoJson |
+        ConvertTo-Json -Depth 20 |
+        Set-Content -Path $OutFile -Encoding utf8
+
+    Write-Host "GeoJSON geschrieben: $OutFile"
+}
+
+function Convert-AllRunGpsTcxToGeoJson {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$TcxDirectory,
+
+        [Parameter(Mandatory)]
+        [string]$GeoJsonDirectory,
+
+        [switch]$Force
+    )
+
+    New-Item -ItemType Directory -Force -Path $GeoJsonDirectory | Out-Null
+
+    Get-ChildItem -Path $TcxDirectory -Filter '*.tcx' -File |
+        ForEach-Object {
+            $outFile = Join-Path $GeoJsonDirectory ($_.BaseName + '.geojson')
+
+            if ((-not $Force) -and (Test-Path $outFile -PathType Leaf)) {
+                Write-Host "Skip existing GeoJSON: $outFile"
+                return
+            }
+
+            Convert-RunGpsTcxToGeoJson -TcxPath $_.FullName -OutFile $outFile
+        }
+}
+
+function Convert-RunGpsTcxToMapPoint {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$TcxPath
+    )
+
+    [xml]$xml = Get-Content -Path $TcxPath -Raw
+
+    $ns = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+    $ns.AddNamespace('tcx', 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2')
+
+    $trackpoint = $xml.SelectSingleNode('//tcx:Trackpoint[tcx:Position/tcx:LatitudeDegrees and tcx:Position/tcx:LongitudeDegrees]', $ns)
+
+    if ($null -eq $trackpoint) {
+        return $null
+    }
+
+    $lat = [double]::Parse(
+        $trackpoint.Position.LatitudeDegrees,
+        [System.Globalization.CultureInfo]::InvariantCulture
+    )
+
+    $lon = [double]::Parse(
+        $trackpoint.Position.LongitudeDegrees,
+        [System.Globalization.CultureInfo]::InvariantCulture
+    )
+
+    $id = [System.IO.Path]::GetFileNameWithoutExtension($TcxPath)
+
+    [PSCustomObject]@{
+        type       = 'Feature'
+        geometry   = @{
+            type        = 'Point'
+            coordinates = @($lon, $lat)
+        }
+        properties = @{
+            id   = $id
+            file = (Split-Path $TcxPath -Leaf)
+        }
+    }
+}
+
+function New-RunGpsTrainingsGeoJson {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$TrainingsTcxPath,
+
+        [Parameter(Mandatory)]
+        [string]$OutFile
+    )
+
+    $features = Get-ChildItem -Path $TrainingsTcxPath -Filter '*.TCX' -File |
+        ForEach-Object {
+            Convert-RunGpsTcxToMapPoint -TcxPath $_.FullName
+        } |
+        Where-Object { $null -ne $_ }
+
+    $geoJson = [ordered]@{
+        type     = 'FeatureCollection'
+        features = @($features)
+    }
+
+    $geoJson |
+        ConvertTo-Json -Depth 20 |
+        Set-Content -Path $OutFile -Encoding utf8
+
+    Write-Host "GeoJSON geschrieben: $OutFile"
+    Write-Host "Features: $(@($features).Count)"
 }
 
 Function Disconnect-RunGPS {
@@ -1081,6 +1165,17 @@ foreach ($training in $trainings) {
 $trainingsXml = Join-Path $RunGPSDataRoot 'Trainings.xml'
 $trainings | Export-Clixml -Path $trainingsXml
 
+$tcxPath = Join-Path $PSScriptRoot 'RunGPSData/Trainings'
+$geoJsonPath = Join-Path $PSScriptRoot 'RunGPSData/TrngsGeoJSON'
+
+Convert-AllRunGpsTcxToGeoJson `
+    -TcxDirectory $tcxPath `
+    -GeoJsonDirectory $geoJsonPath
+	
+New-RunGpsTrainingsGeoJson `
+    -TrainingsTcxPath (Join-Path $PSScriptRoot 'RunGPSData/Trainings') `
+    -OutFile (Join-Path $PSScriptRoot 'RunGPSData/Maps/trainings.geojson')
+	
 <# Rest ignorieren wenn obiges klappt
 
 # erste Route zum Testen speichern
