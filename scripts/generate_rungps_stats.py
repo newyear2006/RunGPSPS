@@ -25,7 +25,80 @@ GEOJSON_DIR = OUT_ROOT / "geojson"
 
 ELEVATION_GAIN_THRESHOLD_M = 3.0
 
+import re
 
+def parse_rungps_trainings_xml_metadata(path: Path) -> pd.DataFrame:
+    """
+    Liest RunGPSData/Trainings.xml.
+    Die Datei ist faktisch keine normale XML-Struktur, sondern eine PowerShell-nahe Textdarstellung.
+    Relevante Zeilen sehen z.B. so aus:
+
+    DateTime 2 ~~Autofahren~~ 2868449 ~~(unbenannt)~~ 835.62 PT10H48M25S ...
+    """
+
+    if not path.exists():
+        print(f"RunGPS metadata file not found: {path}")
+        return pd.DataFrame()
+
+    rows = []
+
+    pattern = re.compile(
+        r"^DateTime\s+"
+        r"(?P<display_hint>\d+)\s+"
+        r"~~(?P<sportart>.*?)~~\s+"
+        r"(?P<id>\d+)\s+"
+        r"~~(?P<titel>.*?)~~\s+"
+        r"(?P<distanz>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<dauer>PT\S+)\s+"
+        r"(?P<kalorien>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<herzfrequenz_d>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<trittfrequenz_d>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<geschwindigkeit_d>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<geschwindigkeit_da>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<hoehe_min>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<hoehe_max>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<abstieg>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<aufstieg>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<gewicht>[-+]?\d+(?:\.\d+)?)\s+"
+        r"~~(?P<distanz_bereich>.*?)~~\s+"
+        r"(?P<export_date>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
+    )
+
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        m = pattern.match(line)
+        if not m:
+            continue
+
+        d = m.groupdict()
+
+        rows.append(
+            {
+                "id": d["id"],
+                "rungps_sportart": d["sportart"],
+                "rungps_titel": d["titel"],
+                "rungps_distanz_km": float(d["distanz"]),
+                "rungps_dauer": d["dauer"],
+                "rungps_kalorien": float(d["kalorien"]),
+                "rungps_geschwindigkeit_kmh": float(d["geschwindigkeit_d"]),
+                "rungps_geschwindigkeit_da_kmh": float(d["geschwindigkeit_da"]),
+                "rungps_hoehe_min_m": float(d["hoehe_min"]),
+                "rungps_hoehe_max_m": float(d["hoehe_max"]),
+                "rungps_abstieg_m": float(d["abstieg"]),
+                "rungps_aufstieg_m": float(d["aufstieg"]),
+                "rungps_distanz_bereich": d["distanz_bereich"],
+                "rungps_export_date": d["export_date"],
+            }
+        )
+
+    result = pd.DataFrame(rows)
+
+    if not result.empty:
+        result["id"] = result["id"].astype(str)
+
+    print(f"RunGPS metadata rows parsed: {len(result)}")
+    return result
+    
 def local_name(tag: str) -> str:
     if "}" in tag:
         return tag.rsplit("}", 1)[1]
@@ -395,7 +468,8 @@ def write_geojson(df: pd.DataFrame):
                 "properties": {
                     "id": str(row["id"]),
                     "date": row.get("date"),
-                    "sport": row.get("sport"),
+                    "sport": row.get("sport_display"),
+                    "title": row.get("title_display"),
                     "distance_km": round(float(row["distance_km"]), 3)
                     if pd.notna(row["distance_km"])
                     else None,
@@ -558,7 +632,7 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
             [
                 ("Training", "Training"),
                 ("date", "Datum"),
-                ("sport", "Sport"),
+                ("sport_display", "Sport"),
                 ("distance_km_fmt", "km"),
                 ("duration", "Dauer"),
                 ("elevation_gain_fmt", "Hm+"),
@@ -609,6 +683,21 @@ def main():
         raise RuntimeError("Keine TCX-Datei konnte erfolgreich ausgewertet werden.")
 
     df = pd.DataFrame(records)
+
+    metadata_path = REPO_ROOT / "RunGPSData" / "Trainings.xml"
+    metadata_df = parse_rungps_trainings_xml_metadata(metadata_path)
+    
+    df["id"] = df["id"].astype(str)
+    
+    if not metadata_df.empty:
+        df = df.merge(metadata_df, on="id", how="left")
+    
+        df["sport_display"] = df["rungps_sportart"].fillna(df["sport"])
+        df["title_display"] = df["rungps_titel"].fillna("")
+    else:
+        df["sport_display"] = df["sport"]
+        df["title_display"] = ""
+        
 
     df["dt"] = pd.to_datetime(df["start_time"], utc=True, errors="coerce")
     df["year"] = df["dt"].dt.year
