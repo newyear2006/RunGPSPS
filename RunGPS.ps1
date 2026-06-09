@@ -279,31 +279,53 @@ Function NewRoute {
 
 # $runGPS muss existieren!
 Function SaveRoutesData {
-    [Cmdletbinding()]
+    [CmdletBinding()]
     Param(
+        [Parameter(Mandatory)]
         [String]$ID,
-        [String]$Path
+
+        [Parameter(Mandatory)]
+        [String]$Path,
+
+        [switch]$Force
     )
 
-    Write-Verbose "Saving $ID"
-    SaveRouteGPSData -ID $ID -FileType GPX -Path $Path
-    SaveRouteGPSData -ID $ID -FileType KML -Path $Path
-
+    SaveRouteGPSData -ID $ID -FileType GPX -Path $Path -Force:$Force
+    # SaveRouteGPSData -ID $ID -FileType KML -Path $Path -Force:$Force
 }
 
 # $runGPS muss existieren!
 Function SaveRouteGPSData {
     [CmdletBinding()]
     Param(
+        [Parameter(Mandatory)]
         [String]$ID,
+
         [String]$FileType = "GPX",
-        [String]$Path
+
+        [Parameter(Mandatory)]
+        [String]$Path,
+
+        [switch]$Force
     )
-    
+
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+
     $SaveFile = Join-Path -Path $Path -ChildPath "Route-$($ID).$FileType"
 
-    Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/routePlanner/dlServices/$($FileType.ToLower()).jsp?routeID=$ID" -OutFile $SaveFile
+    if ((-not $Force) -and (Test-Path $SaveFile -PathType Leaf)) {
+        Write-Host "Skip existing route file: $SaveFile"
+        return
+    }
 
+    Write-Host "Download route $ID as $FileType -> $SaveFile"
+
+    Invoke-WebRequest `
+        -WebSession $runGPS `
+        -Uri "https://www.gps-sport.net/routePlanner/dlServices/$($FileType.ToLower()).jsp?routeID=$ID" `
+        -OutFile $SaveFile `
+        -MaximumRedirection 10 `
+        -ErrorAction Stop
 }
 
 # gibt zu einer KM-Zahl den Distanzbereich zurück
@@ -350,35 +372,54 @@ function NewTraining {
 
 # $runGPS muss existieren!
 Function SaveTrainingsData {
-    [Cmdletbinding()]
+    [CmdletBinding()]
     Param(
+        [Parameter(Mandatory)]
         [String]$ID,
+
+        [Parameter(Mandatory)]
         [String]$Path,
-	[switch]$Force
+
+        [switch]$Force
     )
 
-    Write-Verbose "Saving $ID"
-    SaveTrainingGPSData -ID $ID -FileType GPX -Path $Path -Force:$Force
-    SaveTrainingGPSData -ID $ID -FileType KML -Path $Path -Force:$Force
+    # SaveTrainingGPSData -ID $ID -FileType GPX -Path $Path -Force:$Force
+    # SaveTrainingGPSData -ID $ID -FileType KML -Path $Path -Force:$Force
     SaveTrainingGPSData -ID $ID -FileType TCX -Path $Path -Force:$Force
-
 }
 
 # $runGPS muss existieren!
 Function SaveTrainingGPSData {
     [CmdletBinding()]
     Param(
+        [Parameter(Mandatory)]
         [String]$ID,
+
         [String]$FileType = "GPX",
+
+        [Parameter(Mandatory)]
         [String]$Path,
-	[switch]$Force
+
+        [switch]$Force
     )
+
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
 
     $SaveFile = Join-Path -Path $Path -ChildPath "$($ID).$FileType"
 
-    If (($Force) -or (-Not (Test-Path $SaveFile -Type Leaf))) {
-      Invoke-WebRequest -WebSession $runGPS -Uri "http://www.gps-sport.net/services/training$($FileType).jsp?trainingID=$ID" -OutFile $SaveFile
+    if ((-not $Force) -and (Test-Path $SaveFile -PathType Leaf)) {
+        Write-Host "Skip existing training file: $SaveFile"
+        return
     }
+
+    Write-Host "Download training $ID as $FileType -> $SaveFile"
+
+    Invoke-WebRequest `
+        -WebSession $runGPS `
+        -Uri "https://www.gps-sport.net/services/training$($FileType).jsp?trainingID=$ID" `
+        -OutFile $SaveFile `
+        -MaximumRedirection 10 `
+        -ErrorAction Stop
 }
 
 # ermittelt alle Trainings, Zeitraum und Sportart können optional angegeben werden
@@ -970,6 +1011,15 @@ $r2 = Invoke-WebRequest `
 Write-Host "Routes response: HTTP $($r2.StatusCode), Content length: $($r2.Content.Length)"
 Write-Host "------------------- nach Test------------------"
 
+$RunGPSDataRoot = Join-Path $PSScriptRoot 'RunGPSData'
+$RunGPSRoutesPath = Join-Path $RunGPSDataRoot 'Routes'
+$RunGPSTrainingsPath = Join-Path $RunGPSDataRoot 'Trainings'
+
+New-Item -ItemType Directory -Force -Path $RunGPSRoutesPath | Out-Null
+New-Item -ItemType Directory -Force -Path $RunGPSTrainingsPath | Out-Null
+
+Write-Host "Routes path: $RunGPSRoutesPath"
+Write-Host "Trainings path: $RunGPSTrainingsPath"
 
 
 $headers = @{
@@ -1014,6 +1064,25 @@ if ($routes.Count -eq 0) {
     throw "Keine Routen gefunden. HTML wurde nach $debugFile geschrieben."
 }
 
+$routes = @($routes)
+Write-Host "Routes found: $($routes.Count)"
+
+foreach ($route in $routes) {
+    SaveRoutesData -ID $route.ID -Path $RunGPSRoutesPath
+}
+
+$trainings = @(Get-Trainings)
+Write-Host "Trainings found: $($trainings.Count)"
+
+foreach ($training in $trainings) {
+    SaveTrainingsData -ID $training.ID -Path $RunGPSTrainingsPath
+}
+
+$trainingsXml = Join-Path $RunGPSDataRoot 'Trainings.xml'
+$trainings | Export-Clixml -Path $trainingsXml
+
+<# Rest ignorieren wenn obiges klappt
+
 # erste Route zum Testen speichern
 SaveRouteGPSData -ID $routes[0].ID -FileType GPX -Path C:\Temp\RunGPS
 
@@ -1047,3 +1116,5 @@ $trainings|Export-Clixml -Path c:\temp\RunGPS\Trainings.xml
 
 # Trainings wieder laden
 $trainings=Import-Clixml -Path .\Trainings.xml
+
+#>
