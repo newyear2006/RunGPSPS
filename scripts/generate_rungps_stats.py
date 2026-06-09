@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,90 +20,18 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TRAININGS_ROOT = REPO_ROOT / "RunGPSData" / "Trainings"
+TRAININGS_XML = REPO_ROOT / "RunGPSData" / "Trainings.xml"
+
 OUT_ROOT = REPO_ROOT / "RunGPSData" / "Stats"
 CHARTS_DIR = OUT_ROOT / "charts"
 GEOJSON_DIR = OUT_ROOT / "geojson"
 
 ELEVATION_GAIN_THRESHOLD_M = 3.0
+VEHICLE_SPORTS = {"Autofahren"}
 
-import re
 
-def parse_rungps_trainings_xml_metadata(path: Path) -> pd.DataFrame:
-    """
-    Liest RunGPSData/Trainings.xml.
-    Die Datei ist faktisch keine normale XML-Struktur, sondern eine PowerShell-nahe Textdarstellung.
-    Relevante Zeilen sehen z.B. so aus:
-
-    DateTime 2 ~~Autofahren~~ 2868449 ~~(unbenannt)~~ 835.62 PT10H48M25S ...
-    """
-
-    if not path.exists():
-        print(f"RunGPS metadata file not found: {path}")
-        return pd.DataFrame()
-
-    rows = []
-
-    pattern = re.compile(
-        r"^DateTime\s+"
-        r"(?P<display_hint>\d+)\s+"
-        r"~~(?P<sportart>.*?)~~\s+"
-        r"(?P<id>\d+)\s+"
-        r"~~(?P<titel>.*?)~~\s+"
-        r"(?P<distanz>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<dauer>PT\S+)\s+"
-        r"(?P<kalorien>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<herzfrequenz_d>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<trittfrequenz_d>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<geschwindigkeit_d>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<geschwindigkeit_da>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<hoehe_min>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<hoehe_max>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<abstieg>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<aufstieg>[-+]?\d+(?:\.\d+)?)\s+"
-        r"(?P<gewicht>[-+]?\d+(?:\.\d+)?)\s+"
-        r"~~(?P<distanz_bereich>.*?)~~\s+"
-        r"(?P<export_date>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
-    )
-
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        m = pattern.match(line)
-        if not m:
-            continue
-
-        d = m.groupdict()
-
-        rows.append(
-            {
-                "id": d["id"],
-                "rungps_sportart": d["sportart"],
-                "rungps_titel": d["titel"],
-                "rungps_distanz_km": float(d["distanz"]),
-                "rungps_dauer": d["dauer"],
-                "rungps_kalorien": float(d["kalorien"]),
-                "rungps_geschwindigkeit_kmh": float(d["geschwindigkeit_d"]),
-                "rungps_geschwindigkeit_da_kmh": float(d["geschwindigkeit_da"]),
-                "rungps_hoehe_min_m": float(d["hoehe_min"]),
-                "rungps_hoehe_max_m": float(d["hoehe_max"]),
-                "rungps_abstieg_m": float(d["abstieg"]),
-                "rungps_aufstieg_m": float(d["aufstieg"]),
-                "rungps_distanz_bereich": d["distanz_bereich"],
-                "rungps_export_date": d["export_date"],
-            }
-        )
-
-    result = pd.DataFrame(rows)
-
-    if not result.empty:
-        result["id"] = result["id"].astype(str)
-
-    print(f"RunGPS metadata rows parsed: {len(result)}")
-    return result
-    
 def local_name(tag: str) -> str:
-    if "}" in tag:
-        return tag.rsplit("}", 1)[1]
-    return tag
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
 def child(elem: ET.Element, name: str) -> ET.Element | None:
@@ -181,6 +110,27 @@ def format_duration(seconds: float | int | None) -> str:
     return f"{minutes:d}:{secs:02d}"
 
 
+def parse_iso_duration_to_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+
+    match = re.fullmatch(
+        r"P(?:(?P<days>\d+(?:\.\d+)?)D)?"
+        r"(?:T(?:(?P<hours>\d+(?:\.\d+)?)H)?(?:(?P<minutes>\d+(?:\.\d+)?)M)?(?:(?P<seconds>\d+(?:\.\d+)?)S)?)?",
+        value.strip(),
+    )
+
+    if not match:
+        return None
+
+    days = float(match.group("days") or 0)
+    hours = float(match.group("hours") or 0)
+    minutes = float(match.group("minutes") or 0)
+    seconds = float(match.group("seconds") or 0)
+
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
 def parse_tcx(path: Path) -> dict:
     tree = ET.parse(path)
     root = tree.getroot()
@@ -205,6 +155,7 @@ def parse_tcx(path: Path) -> dict:
     lap_duration_s = 0.0
     calories = 0
     lap_start_times: list[datetime] = []
+    max_speed_mps_values: list[float] = []
 
     for lap in laps:
         d = safe_float(child_text(lap, "DistanceMeters"))
@@ -218,6 +169,10 @@ def parse_tcx(path: Path) -> dict:
         c = safe_int(child_text(lap, "Calories"))
         if c:
             calories += c
+
+        ms = safe_float(child_text(lap, "MaximumSpeed"))
+        if ms is not None:
+            max_speed_mps_values.append(ms)
 
         start_time = parse_tcx_time(lap.attrib.get("StartTime"))
         if start_time:
@@ -324,6 +279,10 @@ def parse_tcx(path: Path) -> dict:
     if duration_s > 0 and distance_m > 0:
         avg_speed_kmh = (distance_m / 1000.0) / (duration_s / 3600.0)
 
+    max_speed_kmh = None
+    if max_speed_mps_values:
+        max_speed_kmh = max(max_speed_mps_values) * 3.6
+
     rel_path = path.relative_to(REPO_ROOT).as_posix()
     rel_from_stats = os.path.relpath(path, OUT_ROOT).replace(os.sep, "/")
 
@@ -333,7 +292,7 @@ def parse_tcx(path: Path) -> dict:
         "path": rel_path,
         "link_from_stats": rel_from_stats,
         "activity_id": activity_id,
-        "sport": sport,
+        "tcx_sport": sport,
         "start_time": start_time.isoformat() if start_time else None,
         "date": start_time.date().isoformat() if start_time else None,
         "distance_km": distance_m / 1000.0,
@@ -342,6 +301,7 @@ def parse_tcx(path: Path) -> dict:
         "duration": format_duration(duration_s),
         "duration_source": duration_source,
         "avg_speed_kmh": avg_speed_kmh,
+        "max_speed_kmh": max_speed_kmh,
         "calories": calories,
         "elevation_gain_m": elevation_gain_m,
         "elevation_loss_m": elevation_loss_m,
@@ -356,6 +316,103 @@ def parse_tcx(path: Path) -> dict:
         "start_lat": start_lat,
         "start_lon": start_lon,
     }
+
+
+def parse_rungps_trainings_xml_metadata(path: Path) -> pd.DataFrame:
+    """
+    Liest RunGPSData/Trainings.xml.
+
+    Diese Datei ist aus Export-Clixml / PowerShell-Objekten entstanden und enthält
+    pro Training eine Textzeile mit Feldern wie:
+    DateTime 2 ~~Wandern~~ 12345 ~~Titel~~ 12.34 PT1H2M3S ...
+    """
+
+    if not path.exists():
+        print(f"RunGPS metadata file not found: {path}")
+        return pd.DataFrame()
+
+    rows = []
+
+    pattern = re.compile(
+        r"DateTime\s+"
+        r"(?P<display_hint>\d+)\s+"
+        r"~~(?P<sportart>.*?)~~\s+"
+        r"(?P<id>\d+)\s+"
+        r"~~(?P<titel>.*?)~~\s+"
+        r"(?P<distanz>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<dauer>PT\S+)\s+"
+        r"(?P<kalorien>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<herzfrequenz_d>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<trittfrequenz_d>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<geschwindigkeit_d>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<geschwindigkeit_da>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<hoehe_min>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<hoehe_max>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<abstieg>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<aufstieg>[-+]?\d+(?:\.\d+)?)\s+"
+        r"(?P<gewicht>[-+]?\d+(?:\.\d+)?)\s+"
+        r"~~(?P<distanz_bereich>.*?)~~\s+"
+        r"(?P<datum>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"
+    )
+
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        m = pattern.search(line)
+        if not m:
+            continue
+
+        d = m.groupdict()
+        dauer_s = parse_iso_duration_to_seconds(d["dauer"])
+
+        rows.append(
+            {
+                "id": d["id"],
+                "rungps_sportart": d["sportart"],
+                "rungps_titel": d["titel"],
+                "rungps_distanz_km": float(d["distanz"]),
+                "rungps_dauer": d["dauer"],
+                "rungps_duration_s": dauer_s,
+                "rungps_kalorien": float(d["kalorien"]),
+                "rungps_herzfrequenz_d": float(d["herzfrequenz_d"]),
+                "rungps_trittfrequenz_d": float(d["trittfrequenz_d"]),
+                "rungps_geschwindigkeit_kmh": float(d["geschwindigkeit_d"]),
+                "rungps_geschwindigkeit_da_kmh": float(d["geschwindigkeit_da"]),
+                "rungps_hoehe_min_m": float(d["hoehe_min"]),
+                "rungps_hoehe_max_m": float(d["hoehe_max"]),
+                "rungps_abstieg_m": float(d["abstieg"]),
+                "rungps_aufstieg_m": float(d["aufstieg"]),
+                "rungps_gewicht_g": float(d["gewicht"]),
+                "rungps_distanz_bereich": d["distanz_bereich"],
+                "rungps_datum": d["datum"],
+            }
+        )
+
+    result = pd.DataFrame(rows)
+
+    if not result.empty:
+        result["id"] = result["id"].astype(str)
+
+    print(f"RunGPS metadata rows parsed: {len(result)}")
+    return result
+
+
+def enrich_with_rungps_metadata(df: pd.DataFrame) -> pd.DataFrame:
+    metadata_df = parse_rungps_trainings_xml_metadata(TRAININGS_XML)
+
+    df = df.copy()
+    df["id"] = df["id"].astype(str)
+
+    if not metadata_df.empty:
+        df = df.merge(metadata_df, on="id", how="left")
+    else:
+        df["rungps_sportart"] = pd.NA
+        df["rungps_titel"] = pd.NA
+
+    df["sport_display"] = df["rungps_sportart"].fillna(df["tcx_sport"]).fillna("")
+    df["title_display"] = df["rungps_titel"].fillna("")
+    df["is_vehicle"] = df["sport_display"].isin(VEHICLE_SPORTS)
+
+    return df
 
 
 def fmt_num(value, decimals=1, suffix=""):
@@ -387,7 +444,7 @@ def md_table(df: pd.DataFrame, columns: list[tuple[str, str]], max_rows: int = 2
             value = row.get(col, "")
             if pd.isna(value):
                 value = ""
-            values.append(str(value))
+            values.append(str(value).replace("|", "\\|"))
         lines.append("| " + " | ".join(values) + " |")
 
     return "\n".join(lines) + "\n"
@@ -475,6 +532,7 @@ def write_geojson(df: pd.DataFrame):
                     else None,
                     "duration": row.get("duration"),
                     "tcx": row.get("path"),
+                    "is_vehicle": bool(row.get("is_vehicle", False)),
                 },
                 "geometry": {
                     "type": "Point",
@@ -488,9 +546,38 @@ def write_geojson(df: pd.DataFrame):
     out_file.write_text(json.dumps(collection, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFrame):
-    report = []
+def make_period_summaries(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    dated = df.dropna(subset=["dt"]).copy()
 
+    yearly = (
+        dated.groupby("year", as_index=False)
+        .agg(
+            trainings=("id", "count"),
+            distance_km=("distance_km", "sum"),
+            duration_h=("duration_h", "sum"),
+            elevation_gain_m=("elevation_gain_m", "sum"),
+            calories=("calories", "sum"),
+            avg_speed_kmh=("avg_speed_kmh", "mean"),
+        )
+        .sort_values("year")
+    )
+
+    monthly = (
+        dated.groupby("month", as_index=False)
+        .agg(
+            trainings=("id", "count"),
+            distance_km=("distance_km", "sum"),
+            duration_h=("duration_h", "sum"),
+            elevation_gain_m=("elevation_gain_m", "sum"),
+            calories=("calories", "sum"),
+        )
+        .sort_values("month")
+    )
+
+    return yearly, monthly
+
+
+def add_overview(report: list[str], title: str, df: pd.DataFrame):
     total_trainings = len(df)
     total_km = df["distance_km"].sum()
     total_duration_h = df["duration_s"].sum() / 3600.0
@@ -498,10 +585,7 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
     first_date = df["dt"].min()
     last_date = df["dt"].max()
 
-    report.append("# RunGPS Trainingsstatistik\n")
-    report.append("_Automatisch erzeugt aus den TCX-Dateien in `RunGPSData/Trainings`._\n")
-
-    report.append("## Überblick\n")
+    report.append(f"## {title}\n")
     report.append(f"- Trainings: **{fmt_int(total_trainings)}**")
     report.append(f"- Gesamtdistanz: **{fmt_num(total_km, 1, ' km')}**")
     report.append(f"- Gesamtdauer: **{fmt_num(total_duration_h, 1, ' h')}**")
@@ -511,8 +595,8 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
     report.append(f"- Trainings mit GPS-Startpunkt: **{fmt_int(df['start_lat'].notna().sum())}**")
     report.append(f"- Trainings mit Herzfrequenzdaten: **{fmt_int(df['avg_hr'].notna().sum())}**\n")
 
-    report.append("## Highlights\n")
 
+def highlights_table(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFrame) -> str:
     highlight_rows = []
 
     candidates = [
@@ -527,6 +611,7 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
     for label, row, col, suffix, decimals in candidates:
         if row is None:
             continue
+
         if col == "duration_s":
             value = format_duration(row[col])
         elif suffix == "":
@@ -535,10 +620,13 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
             value = fmt_num(row[col], decimals, suffix)
 
         link = f"[{row['id']}]({row['link_from_stats']})"
+
         highlight_rows.append(
             {
                 "Highlight": label,
                 "Training": link,
+                "Sport": row.get("sport_display", ""),
+                "Titel": row.get("title_display", ""),
                 "Datum": row.get("date", ""),
                 "Wert": value,
             }
@@ -550,6 +638,8 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
             {
                 "Highlight": "Stärkstes Jahr nach Kilometern",
                 "Training": str(int(best_year["year"])),
+                "Sport": "",
+                "Titel": "",
                 "Datum": "",
                 "Wert": fmt_num(best_year["distance_km"], 1, " km"),
             }
@@ -561,6 +651,8 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
             {
                 "Highlight": "Stärkster Monat nach Kilometern",
                 "Training": best_month["month"],
+                "Sport": "",
+                "Titel": "",
                 "Datum": "",
                 "Wert": fmt_num(best_month["distance_km"], 1, " km"),
             }
@@ -572,19 +664,58 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
             {
                 "Highlight": "Längste Serie mit Trainingstagen",
                 "Training": "",
+                "Sport": "",
+                "Titel": "",
                 "Datum": f"{streak_start.date()} bis {streak_end.date()}",
                 "Wert": f"{streak_len} Tage",
             }
         )
 
+    return md_table(
+        pd.DataFrame(highlight_rows),
+        [
+            ("Highlight", "Highlight"),
+            ("Training", "Training"),
+            ("Sport", "Sport"),
+            ("Titel", "Titel"),
+            ("Datum", "Datum"),
+            ("Wert", "Wert"),
+        ],
+        max_rows=50,
+    )
+
+
+def generate_report(df: pd.DataFrame, sport_df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFrame):
+    report = []
+
+    report.append("# RunGPS Trainingsstatistik\n")
+    report.append("_Automatisch erzeugt aus TCX-Dateien und RunGPS-Metadaten aus `RunGPSData/Trainings.xml`._\n")
+
+    add_overview(report, "Überblick: alle Aufzeichnungen", df)
+
+    if len(sport_df) != len(df):
+        add_overview(report, "Überblick: ohne Autofahren", sport_df)
+
+    report.append("## Highlights\n")
+    report.append("_Die Highlights beziehen sich auf die Auswertung ohne `Autofahren`, falls solche Einträge vorhanden sind._\n")
+    report.append(highlights_table(sport_df, yearly, monthly))
+
+    report.append("## Sportarten\n")
+    sport_counts = (
+        df.groupby("sport_display", dropna=False, as_index=False)
+        .agg(trainings=("id", "count"), distance_km=("distance_km", "sum"), duration_h=("duration_h", "sum"))
+        .sort_values(["distance_km", "trainings"], ascending=False)
+    )
+    sport_counts["distance_km"] = sport_counts["distance_km"].map(lambda x: fmt_num(x, 1))
+    sport_counts["duration_h"] = sport_counts["duration_h"].map(lambda x: fmt_num(x, 1))
     report.append(
         md_table(
-            pd.DataFrame(highlight_rows),
+            sport_counts,
             [
-                ("Highlight", "Highlight"),
-                ("Training", "Training"),
-                ("Datum", "Datum"),
-                ("Wert", "Wert"),
+                ("sport_display", "Sport"),
+                ("trainings", "Trainings"),
+                ("distance_km", "km"),
+                ("duration_h", "Stunden"),
             ],
             max_rows=50,
         )
@@ -596,11 +727,12 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
     report.append("![Kumulative Kilometer](charts/cumulative_km.png)\n")
     report.append("![Trainings pro Wochentag](charts/trainings_by_weekday.png)\n")
     report.append("![Top 20 längste Trainings](charts/top20_distance.png)\n")
+    report.append("![Kilometer nach Sportart](charts/km_by_sport.png)\n")
 
     report.append("## Karten\n")
     report.append("- [GitHub-Karte: Trainings-Startpunkte](geojson/trainings-overview.geojson)\n")
 
-    report.append("## Jahresübersicht\n")
+    report.append("## Jahresübersicht ohne Autofahren\n")
     yearly_md = yearly.copy()
     if not yearly_md.empty:
         yearly_md["distance_km"] = yearly_md["distance_km"].map(lambda x: fmt_num(x, 1))
@@ -620,8 +752,8 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
         )
     )
 
-    report.append("## Top 20 längste Trainings\n")
-    top = df.sort_values("distance_km", ascending=False).head(20).copy()
+    report.append("## Top 20 längste Trainings ohne Autofahren\n")
+    top = sport_df.sort_values("distance_km", ascending=False).head(20).copy()
     top["Training"] = top.apply(lambda r: f"[{r['id']}]({r['link_from_stats']})", axis=1)
     top["distance_km_fmt"] = top["distance_km"].map(lambda x: fmt_num(x, 1))
     top["elevation_gain_fmt"] = top["elevation_gain_m"].map(lambda x: fmt_num(x, 0))
@@ -633,6 +765,7 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
                 ("Training", "Training"),
                 ("date", "Datum"),
                 ("sport_display", "Sport"),
+                ("title_display", "Titel"),
                 ("distance_km_fmt", "km"),
                 ("duration", "Dauer"),
                 ("elevation_gain_fmt", "Hm+"),
@@ -642,14 +775,62 @@ def generate_report(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFram
         )
     )
 
+    vehicles = df[df["is_vehicle"]].sort_values("distance_km", ascending=False).copy()
+    if not vehicles.empty:
+        report.append("## Separat erkannt: Autofahren\n")
+        vehicles["Training"] = vehicles.apply(lambda r: f"[{r['id']}]({r['link_from_stats']})", axis=1)
+        vehicles["distance_km_fmt"] = vehicles["distance_km"].map(lambda x: fmt_num(x, 1))
+        vehicles["avg_speed_fmt"] = vehicles["avg_speed_kmh"].map(lambda x: fmt_num(x, 1))
+        report.append(
+            md_table(
+                vehicles,
+                [
+                    ("Training", "Training"),
+                    ("date", "Datum"),
+                    ("title_display", "Titel"),
+                    ("distance_km_fmt", "km"),
+                    ("duration", "Dauer"),
+                    ("avg_speed_fmt", "Ø km/h"),
+                ],
+                max_rows=30,
+            )
+        )
+
     report.append("## Dateien\n")
-    report.append("- `trainings.csv`: alle erkannten Trainings")
-    report.append("- `yearly-summary.csv`: Jahreswerte")
-    report.append("- `monthly-summary.csv`: Monatswerte")
-    report.append("- `highlights.json`: maschinenlesbare Highlights")
+    report.append("- `trainings.csv`: alle erkannten Trainings inklusive RunGPS-Sportart")
+    report.append("- `trainings-without-vehicle.csv`: Auswertung ohne `Autofahren`")
+    report.append("- `yearly-summary.csv`: Jahreswerte ohne `Autofahren`")
+    report.append("- `monthly-summary.csv`: Monatswerte ohne `Autofahren`")
+    report.append("- `highlights.json`: maschinenlesbare Zusammenfassung")
     report.append("- `geojson/trainings-overview.geojson`: Startpunktkarte\n")
 
     (OUT_ROOT / "README.md").write_text("\n".join(report), encoding="utf-8")
+
+
+def generate_charts(df: pd.DataFrame, yearly: pd.DataFrame, monthly: pd.DataFrame):
+    if not yearly.empty:
+        yearly_plot = yearly.set_index("year")
+        save_bar(yearly_plot["distance_km"], "Kilometer pro Jahr ohne Autofahren", "km", CHARTS_DIR / "km_per_year.png", rotation=0)
+        save_bar(yearly_plot["trainings"], "Trainings pro Jahr ohne Autofahren", "Anzahl", CHARTS_DIR / "trainings_per_year.png", rotation=0)
+        save_bar(yearly_plot["elevation_gain_m"], "Höhenmeter pro Jahr ohne Autofahren", "Hm+", CHARTS_DIR / "elevation_per_year.png", rotation=0)
+
+    if not monthly.empty:
+        monthly_plot = monthly.set_index("month")
+        save_bar(monthly_plot["distance_km"].tail(36), "Kilometer pro Monat, letzte 36 Monate, ohne Autofahren", "km", CHARTS_DIR / "km_per_month.png")
+        cumulative = monthly_plot["distance_km"].cumsum()
+        save_line(cumulative, "Kumulative Kilometer ohne Autofahren", "km", CHARTS_DIR / "cumulative_km.png")
+
+    weekday_order = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    weekday_counts = df.dropna(subset=["dt"])["weekday"].value_counts().reindex(weekday_order).fillna(0)
+    save_bar(weekday_counts, "Trainings pro Wochentag ohne Autofahren", "Anzahl", CHARTS_DIR / "trainings_by_weekday.png", rotation=0)
+
+    top20 = df.sort_values("distance_km", ascending=False).head(20)
+    if not top20.empty:
+        series = pd.Series(top20["distance_km"].values, index=top20["id"].astype(str))
+        save_bar(series, "Top 20 längste Trainings ohne Autofahren", "km", CHARTS_DIR / "top20_distance.png", figsize=(12, 6))
+
+    sport_km = df.groupby("sport_display")["distance_km"].sum().sort_values(ascending=False)
+    save_bar(sport_km, "Kilometer nach Sportart ohne Autofahren", "km", CHARTS_DIR / "km_by_sport.png", figsize=(12, 6))
 
 
 def main():
@@ -683,21 +864,7 @@ def main():
         raise RuntimeError("Keine TCX-Datei konnte erfolgreich ausgewertet werden.")
 
     df = pd.DataFrame(records)
-
-    metadata_path = REPO_ROOT / "RunGPSData" / "Trainings.xml"
-    metadata_df = parse_rungps_trainings_xml_metadata(metadata_path)
-    
-    df["id"] = df["id"].astype(str)
-    
-    if not metadata_df.empty:
-        df = df.merge(metadata_df, on="id", how="left")
-    
-        df["sport_display"] = df["rungps_sportart"].fillna(df["sport"])
-        df["title_display"] = df["rungps_titel"].fillna("")
-    else:
-        df["sport_display"] = df["sport"]
-        df["title_display"] = ""
-        
+    df = enrich_with_rungps_metadata(df)
 
     df["dt"] = pd.to_datetime(df["start_time"], utc=True, errors="coerce")
     df["year"] = df["dt"].dt.year
@@ -719,6 +886,7 @@ def main():
         "distance_km",
         "duration_s",
         "avg_speed_kmh",
+        "max_speed_kmh",
         "elevation_gain_m",
         "elevation_loss_m",
         "min_altitude_m",
@@ -730,6 +898,15 @@ def main():
         "trackpoints",
         "geo_points",
         "calories",
+        "rungps_distanz_km",
+        "rungps_duration_s",
+        "rungps_kalorien",
+        "rungps_geschwindigkeit_kmh",
+        "rungps_geschwindigkeit_da_kmh",
+        "rungps_hoehe_min_m",
+        "rungps_hoehe_max_m",
+        "rungps_abstieg_m",
+        "rungps_aufstieg_m",
     ]
 
     for col in numeric_cols:
@@ -739,69 +916,32 @@ def main():
     df = df.sort_values(["dt", "id"], na_position="last").reset_index(drop=True)
     df["duration_h"] = df["duration_s"] / 3600.0
 
+    sport_df = df[~df["is_vehicle"]].copy()
+
     df_csv = df.drop(columns=["dt"])
     df_csv.to_csv(OUT_ROOT / "trainings.csv", index=False)
 
-    dated = df.dropna(subset=["dt"]).copy()
+    sport_csv = sport_df.drop(columns=["dt"])
+    sport_csv.to_csv(OUT_ROOT / "trainings-without-vehicle.csv", index=False)
 
-    yearly = (
-        dated.groupby("year", as_index=False)
-        .agg(
-            trainings=("id", "count"),
-            distance_km=("distance_km", "sum"),
-            duration_h=("duration_h", "sum"),
-            elevation_gain_m=("elevation_gain_m", "sum"),
-            calories=("calories", "sum"),
-            avg_speed_kmh=("avg_speed_kmh", "mean"),
-        )
-        .sort_values("year")
-    )
-
-    monthly = (
-        dated.groupby("month", as_index=False)
-        .agg(
-            trainings=("id", "count"),
-            distance_km=("distance_km", "sum"),
-            duration_h=("duration_h", "sum"),
-            elevation_gain_m=("elevation_gain_m", "sum"),
-            calories=("calories", "sum"),
-        )
-        .sort_values("month")
-    )
+    yearly, monthly = make_period_summaries(sport_df)
 
     yearly.to_csv(OUT_ROOT / "yearly-summary.csv", index=False)
     monthly.to_csv(OUT_ROOT / "monthly-summary.csv", index=False)
 
-    # Grafiken
-    if not yearly.empty:
-        yearly_plot = yearly.set_index("year")
-        save_bar(yearly_plot["distance_km"], "Kilometer pro Jahr", "km", CHARTS_DIR / "km_per_year.png", rotation=0)
-        save_bar(yearly_plot["trainings"], "Trainings pro Jahr", "Anzahl", CHARTS_DIR / "trainings_per_year.png", rotation=0)
-        save_bar(yearly_plot["elevation_gain_m"], "Höhenmeter pro Jahr", "Hm+", CHARTS_DIR / "elevation_per_year.png", rotation=0)
-
-    if not monthly.empty:
-        monthly_plot = monthly.set_index("month")
-        save_bar(monthly_plot["distance_km"].tail(36), "Kilometer pro Monat, letzte 36 Monate", "km", CHARTS_DIR / "km_per_month.png")
-        cumulative = monthly_plot["distance_km"].cumsum()
-        save_line(cumulative, "Kumulative Kilometer", "km", CHARTS_DIR / "cumulative_km.png")
-
-    weekday_order = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
-    weekday_counts = dated["weekday"].value_counts().reindex(weekday_order).fillna(0)
-    save_bar(weekday_counts, "Trainings pro Wochentag", "Anzahl", CHARTS_DIR / "trainings_by_weekday.png", rotation=0)
-
-    top20 = df.sort_values("distance_km", ascending=False).head(20)
-    if not top20.empty:
-        series = pd.Series(top20["distance_km"].values, index=top20["id"].astype(str))
-        save_bar(series, "Top 20 längste Trainings", "km", CHARTS_DIR / "top20_distance.png", figsize=(12, 6))
-
+    generate_charts(sport_df, yearly, monthly)
     write_geojson(df)
 
     highlights = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "training_count": int(len(df)),
-        "total_distance_km": float(df["distance_km"].sum()),
-        "total_duration_h": float(df["duration_h"].sum()),
-        "total_elevation_gain_m": float(df["elevation_gain_m"].sum()),
+        "training_count_all": int(len(df)),
+        "training_count_without_vehicle": int(len(sport_df)),
+        "vehicle_count": int(df["is_vehicle"].sum()),
+        "total_distance_km_all": float(df["distance_km"].sum()),
+        "total_distance_km_without_vehicle": float(sport_df["distance_km"].sum()),
+        "total_duration_h_without_vehicle": float(sport_df["duration_h"].sum()),
+        "total_elevation_gain_m_without_vehicle": float(sport_df["elevation_gain_m"].sum()),
+        "metadata_rows_parsed": int(df["rungps_sportart"].notna().sum()) if "rungps_sportart" in df.columns else 0,
         "parse_errors": errors,
     }
 
@@ -813,10 +953,11 @@ def main():
     if errors:
         pd.DataFrame(errors).to_csv(OUT_ROOT / "parse-errors.csv", index=False)
 
-    generate_report(df, yearly, monthly)
+    generate_report(df, sport_df, yearly, monthly)
 
     print(f"Stats written to: {OUT_ROOT}")
     print(f"Trainings parsed: {len(df)}")
+    print(f"Vehicles excluded from sport stats: {int(df['is_vehicle'].sum())}")
     if errors:
         print(f"Parse warnings: {len(errors)}")
 
