@@ -630,6 +630,7 @@ function Connect-RunGPS {
 
     $body = Get-HtmlFormFields -FormInnerHtml $form.InnerHtml
     $body['userName'] = $Credential.UserName
+	$body['userID'] = $Credential.UserName
     $body['password1'] = ConvertFrom-SecureStringToPlainText -SecureString $Credential.Password
 
     Write-Host "POST $postUri"
@@ -705,6 +706,205 @@ function Get-Sha256Fingerprint {
     return $hash.Substring(0, [Math]::Min($Length, $hash.Length))
 }
 
+function Connect-RunGpsPwsh7 {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$UserName,
+
+        [Parameter(Mandatory)]
+        [string]$Password
+    )
+
+    $ErrorActionPreference = 'Stop'
+
+    $headers = @{
+        'User-Agent'      = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36'
+        'Accept'          = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8'
+        'Accept-Language' = 'de-DE,de;q=0.9,en;q=0.8'
+    }
+
+    function Get-HtmlAttribute {
+        param(
+            [Parameter(Mandatory)][string]$Tag,
+            [Parameter(Mandatory)][string]$Name
+        )
+
+        $pattern = '(?is)\b' + [regex]::Escape($Name) + '\s*=\s*(?:"([^"]*)"|''([^'']*)''|([^>\s]+))'
+        $match = [regex]::Match($Tag, $pattern)
+
+        if (-not $match.Success) {
+            return $null
+        }
+
+        foreach ($i in 1..3) {
+            if ($match.Groups[$i].Success) {
+                return [System.Net.WebUtility]::HtmlDecode($match.Groups[$i].Value)
+            }
+        }
+
+        return $null
+    }
+
+    function Get-FirstForm {
+        param([Parameter(Mandatory)][string]$Html)
+
+        $match = [regex]::Match($Html, '(?is)<form\b(?<attrs>[^>]*)>(?<inner>.*?)</form>')
+
+        if (-not $match.Success) {
+            throw 'Login-Formular nicht gefunden.'
+        }
+
+        [PSCustomObject]@{
+            Attributes = $match.Groups['attrs'].Value
+            InnerHtml  = $match.Groups['inner'].Value
+        }
+    }
+
+    function Get-FormFields {
+        param([Parameter(Mandatory)][string]$FormInnerHtml)
+
+        $fields = [ordered]@{}
+        $inputs = [regex]::Matches($FormInnerHtml, '(?is)<input\b[^>]*>')
+
+        foreach ($input in $inputs) {
+            $tag = $input.Value
+            $name = Get-HtmlAttribute -Tag $tag -Name 'name'
+
+            if ([string]::IsNullOrWhiteSpace($name)) {
+                continue
+            }
+
+            $value = Get-HtmlAttribute -Tag $tag -Name 'value'
+
+            if ($null -eq $value) {
+                $value = ''
+            }
+
+            $fields[$name] = $value
+        }
+
+        return $fields
+    }
+
+    function New-FormUrlEncodedBody {
+        param([Parameter(Mandatory)][hashtable]$Fields)
+
+        ($Fields.GetEnumerator() | ForEach-Object {
+            '{0}={1}' -f `
+                [uri]::EscapeDataString([string]$_.Key), `
+                [uri]::EscapeDataString([string]$_.Value)
+        }) -join '&'
+    }
+
+    function Get-WhitePixelUri {
+        param(
+            [Parameter(Mandatory)][string]$Html,
+            [Parameter(Mandatory)][uri]$BaseUri
+        )
+
+        $images = [regex]::Matches($Html, '(?is)<img\b[^>]*>')
+
+        foreach ($image in $images) {
+            $tag = $image.Value
+
+            foreach ($attr in @('src', 'href')) {
+                $raw = Get-HtmlAttribute -Tag $tag -Name $attr
+
+                if ([string]::IsNullOrWhiteSpace($raw)) {
+                    continue
+                }
+
+                $absolute = ([uri]::new($BaseUri, $raw)).AbsoluteUri
+
+                if ($absolute -match '(?i)^https?://www\.gps-sport\.net/whitePixel\.jsp\?') {
+                    return $absolute
+                }
+            }
+        }
+
+        return $null
+    }
+
+    $loginUri = [uri]'https://www.rungps.net/login.jsp'
+
+    Write-Host "GET $loginUri"
+
+    $loginGet = Invoke-WebRequest `
+        -Uri $loginUri `
+        -SessionVariable runGpsSession `
+        -Headers $headers `
+        -MaximumRedirection 10
+
+    $form = Get-FirstForm -Html $loginGet.Content
+
+    $formAction = Get-HtmlAttribute -Tag $form.Attributes -Name 'action'
+
+    if ([string]::IsNullOrWhiteSpace($formAction)) {
+        $formAction = 'login.jsp'
+    }
+
+    $postUri = [uri]::new($loginUri, $formAction)
+
+    $fields = Get-FormFields -FormInnerHtml $form.InnerHtml
+
+    # Exakt der alte Kern: vorhandene Formularfelder behalten,
+    # nur userName und password1 überschreiben.
+    $fields['userName'] = $UserName
+    $fields['password1'] = $Password
+
+    $body = New-FormUrlEncodedBody -Fields $fields
+
+    $postHeaders = $headers.Clone()
+    $postHeaders['Referer'] = $loginUri.AbsoluteUri
+    $postHeaders['Origin'] = 'https://www.rungps.net'
+
+    Write-Host "POST $postUri"
+    Write-Host "POST fields: $($fields.Keys -join ', ')"
+
+    $loginPost = Invoke-WebRequest `
+        -Uri $postUri `
+        -Method Post `
+        -Body $body `
+        -ContentType 'application/x-www-form-urlencoded; charset=UTF-8' `
+        -WebSession $runGpsSession `
+        -Headers $postHeaders `
+        -MaximumRedirection 10
+
+    Write-Host "Login POST: HTTP $($loginPost.StatusCode), Length=$($loginPost.Content.Length)"
+
+    $whitePixelUri = Get-WhitePixelUri `
+        -Html $loginPost.Content `
+        -BaseUri $loginPost.BaseResponse.RequestMessage.RequestUri
+
+    if ([string]::IsNullOrWhiteSpace($whitePixelUri)) {
+        $debugFile = Join-Path (Get-Location) 'debug-login-post.html'
+        $loginPost.Content | Set-Content -Path $debugFile -Encoding utf8
+
+        throw "Login nicht erfolgreich oder unerwartete Antwort. Kein gps-sport.net/whitePixel.jsp gefunden. Debug: $debugFile"
+    }
+
+    Write-Host "Bridge image: $whitePixelUri"
+
+    $bridge = Invoke-WebRequest `
+        -Uri $whitePixelUri `
+        -WebSession $runGpsSession `
+        -Headers $headers `
+        -MaximumRedirection 10
+
+    Write-Host "Bridge: HTTP $($bridge.StatusCode), Length=$($bridge.Content.Length)"
+
+    $gpsSportCookies = @($runGpsSession.Cookies.GetCookies([uri]'https://www.gps-sport.net/'))
+
+    if ($gpsSportCookies.Count -eq 0) {
+        throw 'Bridge wurde aufgerufen, aber es wurde kein Cookie für gps-sport.net erzeugt.'
+    }
+
+    Write-Host "OK: gps-sport.net cookies: $($gpsSportCookies.Count)"
+
+    return [Microsoft.PowerShell.Commands.WebRequestSession]$runGpsSession
+}
+
 # zum Prüfen, was auf der anderen Seite ankommt: https://pipedream.com/requestbin 
 # früher: http://requestb.in/
 
@@ -744,7 +944,8 @@ Write-Host "RUNGPSPASSWORD sha256-16: $(Get-Sha256Fingerprint -Text $passwordPla
 $securePassword = ConvertTo-SecureString $passwordPlain -AsPlainText -Force
 $cred = [PSCredential]::new($user, $securePassword)
 
-$runGPS = Connect-RunGPS -Credential $cred
+# $runGPS = Connect-RunGPS -Credential $cred
+$runGPS = Connect-RunGpsPwsh7 -Username $user -Password $passwordPlain
 
 Write-Host "------------------- Testaufruf ------------------"
 $headers = @{
