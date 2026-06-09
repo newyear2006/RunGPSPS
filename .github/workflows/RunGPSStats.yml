@@ -2,13 +2,13 @@ name: Generate RunGPS Stats
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "RunGPSData/Trainings/**/*.tcx"
-      - "RunGPSData/Trainings/**/*.TCX"
-      - "scripts/generate_rungps_stats.py"
-      - "requirements-stats.txt"
-      - ".github/workflows/RunGPSStats.yml"
+  #push:
+  #  paths:
+  #    - "RunGPSData/Trainings/**/*.tcx"
+  #    - "RunGPSData/Trainings/**/*.TCX"
+  #    - "scripts/generate_rungps_stats.py"
+  #    - "requirements-stats.txt"
+  #    - ".github/workflows/RunGPSStats.yml"
 
 permissions:
   contents: write
