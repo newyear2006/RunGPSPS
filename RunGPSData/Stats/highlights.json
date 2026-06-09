@@ -1,8 +1,12 @@
 {
-  "generated_at": "2026-06-09T19:24:41.089947+00:00",
-  "training_count": 2162,
-  "total_distance_km": 41083.30296396781,
-  "total_duration_h": 6629.524514722223,
-  "total_elevation_gain_m": 126014.825236506,
+  "generated_at": "2026-06-09T20:02:44.850842+00:00",
+  "training_count_all": 2162,
+  "training_count_without_vehicle": 2162,
+  "vehicle_count": 0,
+  "total_distance_km_all": 41083.30296396781,
+  "total_distance_km_without_vehicle": 41083.30296396781,
+  "total_duration_h_without_vehicle": 6629.524514722223,
+  "total_elevation_gain_m_without_vehicle": 126014.825236506,
+  "metadata_rows_parsed": 0,
   "parse_errors": []
 }
